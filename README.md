@@ -32,7 +32,8 @@ tuning.
 - **Model** — which AI model generates the image. Picking one automatically sets
   sensible steps/size for it, so you usually don't need to touch the other knobs.
   - **SD 1.5** — fastest and lightest. Good for quick tries.
-  - **SDXL 1.0** — highest quality, but slow on this machine (~15 min/image).
+  - **SDXL 1.0** — highest quality, but the slowest; generation time scales with
+    your hardware (can be several minutes per image on Apple Silicon).
   - **SDXL Turbo (fast)** — SDXL-level quality in only 4 steps. The fast option.
 
 - **Prompt** — describe what you want, in plain words. More detail generally
