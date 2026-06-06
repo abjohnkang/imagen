@@ -1,0 +1,12 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# imagen runtime data (models, outputs, db) — lives in ~/imagen by default,
+# but ignore these here too in case IMAGEN_HOME points into the repo.
+outputs/
+models/
+*.db
+imagen_home/

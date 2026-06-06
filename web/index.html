@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>imagen</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header>
+    <h1>imagen</h1>
+    <span id="device" class="device"></span>
+  </header>
+
+  <main>
+    <section class="panel">
+      <label>Prompt
+        <textarea id="prompt" rows="3" placeholder="a lighthouse at dusk, cinematic"></textarea>
+      </label>
+      <label>Negative prompt
+        <textarea id="negative" rows="2" placeholder="blurry, low quality"></textarea>
+      </label>
+
+      <div class="grid">
+        <label>Steps <input id="steps" type="number" value="30" min="1" max="150" /></label>
+        <label>CFG <input id="cfg" type="number" value="7.5" step="0.5" min="0" max="30" /></label>
+        <label>Width <input id="width" type="number" value="512" step="64" min="128" max="1536" /></label>
+        <label>Height <input id="height" type="number" value="512" step="64" min="128" max="1536" /></label>
+        <label>Seed <input id="seed" type="number" value="-1" /></label>
+      </div>
+
+      <button id="go">Generate</button>
+
+      <div id="status" class="status"></div>
+      <div class="progress"><div id="bar"></div></div>
+    </section>
+
+    <section class="preview">
+      <img id="preview" alt="" />
+    </section>
+  </main>
+
+  <h2 class="gallery-title">Gallery</h2>
+  <div id="gallery" class="gallery"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

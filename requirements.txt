@@ -1,0 +1,8 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+torch>=2.2
+diffusers>=0.27
+transformers>=4.40
+accelerate>=0.29
+safetensors>=0.4
+pillow>=10.0
