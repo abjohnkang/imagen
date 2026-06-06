@@ -15,12 +15,17 @@ DB_PATH = BASE_DIR / "imagen.db"
 # engine needs to run it within the 16 GB unified-memory budget.
 #
 #   dtype          float16 | float32 — precision on MPS/CPU (CUDA always fp16).
-#                  fp16 produces black images (NaNs) on this MPS build, so models
-#                  run fp32 here; CUDA boxes get fp16 automatically.
+#                  Both fp16 and bf16 produce black images (NaN latents in the
+#                  unet) on this torch/MPS build, so models run fp32 here. That
+#                  makes generation ~5x slower than half precision would be;
+#                  revisit when MPS half-precision is fixed. CUDA gets fp16.
 #   offload        use accelerate model-cpu-offload to fit a large fp32 pipeline
 #                  in 16 GB (keeps idle components on CPU). Needed for SDXL.
 #   sd_safety_checker  this is an SD1.x pipeline that accepts safety_checker=None
-#   size           sensible default resolution for the UI when this model is picked
+#   size           default resolution the UI snaps to when this model is picked
+#   steps / cfg    default sampler settings the UI applies for this model.
+#                  Turbo is distilled for 1-4 steps with guidance disabled
+#                  (cfg 0), so the switcher must set these or output is garbage.
 MODELS = [
     {
         "id": "stable-diffusion-v1-5/stable-diffusion-v1-5",
@@ -28,6 +33,8 @@ MODELS = [
         "dtype": "float32",
         "sd_safety_checker": True,
         "size": 512,
+        "steps": 30,
+        "cfg": 7.5,
     },
     {
         "id": "stabilityai/stable-diffusion-xl-base-1.0",
@@ -35,6 +42,19 @@ MODELS = [
         "dtype": "float32",
         "offload": True,
         "size": 1024,
+        "steps": 25,
+        "cfg": 7.5,
+    },
+    {
+        # Distilled SDXL: 4 steps instead of 25. At 512 the fp32 pipeline fits
+        # 16 GB resident, so it runs WITHOUT offload (offload's one-time UNet
+        # transfer would dominate so few steps). ~6x faster than SDXL base here.
+        "id": "stabilityai/sdxl-turbo",
+        "label": "SDXL Turbo (fast)",
+        "dtype": "float32",
+        "size": 512,
+        "steps": 4,
+        "cfg": 0.0,
     },
 ]
 
@@ -47,7 +67,14 @@ def model_config(model_id: str) -> dict:
     for m in MODELS:
         if m["id"] == model_id:
             return m
-    return {"id": model_id, "label": model_id, "dtype": "float32", "size": 512}
+    return {
+        "id": model_id,
+        "label": model_id,
+        "dtype": "float32",
+        "size": 512,
+        "steps": 30,
+        "cfg": 7.5,
+    }
 
 # Server
 HOST = os.environ.get("IMAGEN_HOST", "127.0.0.1")

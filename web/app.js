@@ -19,18 +19,23 @@ async function init() {
       sel.append(opt);
     }
     sel.addEventListener("change", applyModelDefaults);
+    applyModelDefaults();
   } catch {}
   loadGallery();
 }
 
-// When the model changes, snap width/height to that model's native size
-// (unless the user has already typed a custom value for this session).
+// When the model changes, snap size and sampler settings to that model's
+// recommended values. This matters most for Turbo, which only looks right at
+// ~4 steps with guidance disabled (cfg 0).
 function applyModelDefaults() {
   const m = MODELS.find((x) => x.id === $("model").value);
-  if (m && m.size) {
+  if (!m) return;
+  if (m.size) {
     $("width").value = m.size;
     $("height").value = m.size;
   }
+  if (m.steps != null) $("steps").value = m.steps;
+  if (m.cfg != null) $("cfg").value = m.cfg;
 }
 
 function readParams() {

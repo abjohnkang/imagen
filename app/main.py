@@ -77,7 +77,13 @@ def models() -> dict:
         "default": config.DEFAULT_MODEL,
         "device": engine.device,
         "models": [
-            {"id": m["id"], "label": m["label"], "size": m["size"]}
+            {
+                "id": m["id"],
+                "label": m["label"],
+                "size": m["size"],
+                "steps": m["steps"],
+                "cfg": m["cfg"],
+            }
             for m in config.MODELS
         ],
     }
