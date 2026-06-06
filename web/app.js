@@ -2,12 +2,35 @@ const $ = (id) => document.getElementById(id);
 
 const fields = ["prompt", "negative", "steps", "cfg", "width", "height", "seed"];
 
+let MODELS = [];
+
 async function init() {
   try {
     const info = await (await fetch("/api/models")).json();
-    $("device").textContent = `device: ${info.device} · ${info.default}`;
+    $("device").textContent = `device: ${info.device}`;
+    MODELS = info.models || [];
+    const sel = $("model");
+    sel.innerHTML = "";
+    for (const m of MODELS) {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.label;
+      if (m.id === info.default) opt.selected = true;
+      sel.append(opt);
+    }
+    sel.addEventListener("change", applyModelDefaults);
   } catch {}
   loadGallery();
+}
+
+// When the model changes, snap width/height to that model's native size
+// (unless the user has already typed a custom value for this session).
+function applyModelDefaults() {
+  const m = MODELS.find((x) => x.id === $("model").value);
+  if (m && m.size) {
+    $("width").value = m.size;
+    $("height").value = m.size;
+  }
 }
 
 function readParams() {
@@ -19,6 +42,7 @@ function readParams() {
     width: parseInt($("width").value, 10),
     height: parseInt($("height").value, 10),
     seed: parseInt($("seed").value, 10),
+    model: $("model").value,
   };
 }
 
@@ -105,6 +129,7 @@ async function loadGallery() {
 }
 
 function applySettings(it) {
+  if (it.model && MODELS.some((m) => m.id === it.model)) $("model").value = it.model;
   $("prompt").value = it.prompt || "";
   $("negative").value = it.negative || "";
   $("steps").value = it.steps;

@@ -59,20 +59,33 @@ class Engine:
             elif self._device == "cuda":
                 torch.cuda.empty_cache()
 
-        # float16 on MPS produces black images (NaNs in the VAE/unet) on many
-        # torch versions, so use float32 there. fp16 is safe on CUDA.
+        mcfg = config.model_config(model)
+
+        # Precision. CUDA is always fp16. On MPS, fp16 produces black images
+        # (NaNs in the unet) on this torch build, so models run in fp32. Larger
+        # fp32 pipelines (SDXL) use cpu-offload below to fit the memory budget.
         dtype = torch.float16 if self._device == "cuda" else torch.float32
+        if self._device != "cuda" and mcfg.get("dtype") == "float16":
+            dtype = torch.float16  # explicit opt-in (e.g. when fp16 is known-good)
+
         kwargs = {"torch_dtype": dtype}
-        if config.DISABLE_SAFETY_CHECKER:
+        # safety_checker is an SD1.x-only pipeline arg; SDXL doesn't accept it.
+        if config.DISABLE_SAFETY_CHECKER and mcfg.get("sd_safety_checker"):
             kwargs["safety_checker"] = None
             kwargs["requires_safety_checker"] = False
 
         pipe = AutoPipelineForText2Image.from_pretrained(model, **kwargs)
-        pipe = pipe.to(self._device)
+
         # Keep memory in check on 16 GB unified memory.
         pipe.enable_attention_slicing()
         if hasattr(pipe, "enable_vae_tiling"):
             pipe.enable_vae_tiling()
+
+        if mcfg.get("offload") and self._device != "cpu":
+            # Stream components on/off the GPU so a big fp32 pipeline fits 16 GB.
+            pipe.enable_model_cpu_offload(device=self._device)
+        else:
+            pipe = pipe.to(self._device)
 
         self._pipe = pipe
         self._loaded_model = model

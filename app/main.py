@@ -73,7 +73,14 @@ def delete_image(image_id: str) -> dict:
 
 @app.get("/api/models")
 def models() -> dict:
-    return {"default": config.DEFAULT_MODEL, "device": engine.device}
+    return {
+        "default": config.DEFAULT_MODEL,
+        "device": engine.device,
+        "models": [
+            {"id": m["id"], "label": m["label"], "size": m["size"]}
+            for m in config.MODELS
+        ],
+    }
 
 
 @app.get("/api/outputs/{filename}")
