@@ -1,4 +1,4 @@
-# imagen
+# Imagen
 
 A local AI image generator with a web UI. Runs entirely on your own
 machine — no API tokens, no per-image cost, no cloud. Built for Apple Silicon
