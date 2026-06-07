@@ -83,6 +83,7 @@ def models() -> dict:
                 "size": m["size"],
                 "steps": m["steps"],
                 "cfg": m["cfg"],
+                "negative": m.get("negative", ""),
             }
             for m in config.MODELS
         ],

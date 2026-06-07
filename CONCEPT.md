@@ -26,7 +26,8 @@ That's the primary constraint and it drives every choice below:
 | Model | VRAM-ish footprint | Fit on M3/16GB | Notes |
 |-------|-------------------|----------------|-------|
 | **SD 1.5** | ~4 GB | Excellent | Fast, huge ecosystem of fine-tunes/LoRAs, 512×512 native |
-| **SDXL** | ~8–10 GB | Good (with slicing) | Higher quality, 1024×1024 native, slower |
+| **SDXL** | ~8–10 GB | Good (with slicing) | Higher quality, 1024×1024 native, slower; base model is "raw" |
+| **RealVisXL 4.0** | ~8–10 GB | Good (with slicing) | SDXL photoreal fine-tune; cleaner anatomy + prompt adherence than base |
 | **SDXL Turbo / LCM** | ~8 GB | Good | Few-step (1–4) generation, near-realtime previews |
 | Flux.1 | 12–24 GB | Out of scope v1 | Revisit with quantized GGUF later |
 
