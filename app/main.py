@@ -7,6 +7,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import config, db
 from .engine import engine
@@ -14,6 +15,17 @@ from .jobs import manager
 from .models import GenerateRequest
 
 app = FastAPI(title="imagen")
+
+# Reject requests whose Host header isn't a loopback name. This blocks DNS
+# rebinding: without it, any website you visit could rebind its domain to
+# 127.0.0.1:7860 and silently drive this API (read the gallery, generate,
+# delete) from your browser. Legit local visits send a loopback Host and pass.
+# (IPv6 "[::1]" is intentionally omitted: Starlette strips the host at the
+# first ":", so a bracketed IPv6 literal can never match — browsers reach us
+# via 127.0.0.1 or localhost anyway.)
+app.add_middleware(
+    TrustedHostMiddleware, allowed_hosts=["127.0.0.1", "localhost"]
+)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
