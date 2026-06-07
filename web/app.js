@@ -3,6 +3,7 @@ const $ = (id) => document.getElementById(id);
 const fields = ["prompt", "negative", "steps", "cfg", "width", "height", "seed"];
 
 let MODELS = [];
+let initImage = null; // filename of the img2img starting image, or null
 
 async function init() {
   try {
@@ -49,7 +50,21 @@ function readParams() {
     height: parseInt($("height").value, 10),
     seed: parseInt($("seed").value, 10),
     model: $("model").value,
+    init_image: initImage || "",
+    strength: parseFloat($("strength").value),
   };
+}
+
+// img2img: start the next generation from an existing image instead of noise.
+function setInitImage(filename) {
+  initImage = filename;
+  $("init-thumb").src = `/api/outputs/${filename}`;
+  $("init-row").hidden = false;
+}
+
+function clearInitImage() {
+  initImage = null;
+  $("init-row").hidden = true;
 }
 
 async function generate() {
@@ -121,15 +136,24 @@ async function loadGallery() {
     img.title = it.prompt;
     img.onclick = () => applySettings(it);
 
+    const edit = document.createElement("button");
+    edit.className = "edit";
+    edit.textContent = "✎";
+    edit.title = "Use as starting image (img2img)";
+    edit.onclick = (e) => {
+      e.stopPropagation();
+      useAsInit(it);
+    };
+
     const del = document.createElement("button");
     del.className = "del";
     del.textContent = "✕";
     del.onclick = (e) => {
       e.stopPropagation();
-      removeImage(it.id);
+      removeImage(it.id, it.filename);
     };
 
-    fig.append(img, del);
+    fig.append(img, edit, del);
     gal.append(fig);
   }
 }
@@ -147,10 +171,24 @@ function applySettings(it) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-async function removeImage(id) {
+// Load an existing generation's settings AND set it as the img2img base, so
+// you can tweak the prompt (e.g. "...sitting...") and nudge just that image.
+function useAsInit(it) {
+  applySettings(it);
+  setInitImage(it.filename);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+async function removeImage(id, filename) {
   await fetch(`/api/gallery/${id}`, { method: "DELETE" });
+  // If the deleted image was the current img2img base, drop the dangling ref.
+  if (filename && filename === initImage) clearInitImage();
   loadGallery();
 }
 
 $("go").addEventListener("click", generate);
+$("clear-init").addEventListener("click", clearInitImage);
+$("strength").addEventListener("input", () => {
+  $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
+});
 init();

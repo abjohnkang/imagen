@@ -20,6 +20,10 @@ class Engine:
     def __init__(self) -> None:
         self._pipe = None
         self._loaded_model: str | None = None
+        # img2img pipeline, derived from self._pipe via from_pipe (shares the
+        # same weights, so it costs no extra memory). Cached per loaded model.
+        self._i2i_pipe = None
+        self._i2i_model: str | None = None
         self._torch = None
         self._device = None
 
@@ -54,6 +58,9 @@ class Engine:
         if self._pipe is not None:
             del self._pipe
             self._pipe = None
+            # The img2img pipe shared the evicted weights — drop it too.
+            self._i2i_pipe = None
+            self._i2i_model = None
             if self._device == "mps":
                 torch.mps.empty_cache()
             elif self._device == "cuda":
@@ -104,11 +111,41 @@ class Engine:
         self._loaded_model = model
         return pipe
 
+    def _img2img(self, model: str):
+        """Return an image-to-image pipeline reusing `model`'s loaded weights."""
+        base = self.load(model)
+        if self._i2i_pipe is not None and self._i2i_model == model:
+            return self._i2i_pipe
+
+        from diffusers import AutoPipelineForImage2Image
+
+        # from_pipe shares the base pipeline's components (and its cpu-offload
+        # hooks), so no weights are reloaded and the memory budget is unchanged.
+        i2i = AutoPipelineForImage2Image.from_pipe(base)
+        i2i.enable_attention_slicing()
+        if hasattr(i2i, "enable_vae_tiling"):
+            i2i.enable_vae_tiling()
+
+        self._i2i_pipe = i2i
+        self._i2i_model = model
+        return i2i
+
+    def _load_init_image(self, filename: str, width: int, height: int):
+        """Load an existing output PNG as an init image, resized to the target."""
+        from PIL import Image
+
+        # Only files inside OUTPUTS_DIR are valid init images (no traversal).
+        path = config.safe_output_path(filename)
+        if path is None:
+            raise ValueError(f"init image not found: {filename}")
+        return Image.open(path).convert("RGB").resize((width, height))
+
     # -- generation -------------------------------------------------------
     def generate(self, params, on_step: Callable[[int, int], None] | None = None):
-        """Run one text-to-image job. Returns (filename, seed_used)."""
+        """Run one text-to-image (or image-to-image) job. Returns (filename, seed)."""
         torch = self._ensure_torch()
-        pipe = self.load(params.model)
+        init_name = getattr(params, "init_image", "") or ""
+        pipe = self._img2img(params.model) if init_name else self.load(params.model)
 
         seed = params.seed
         if seed is None or seed < 0:
@@ -116,16 +153,28 @@ class Engine:
         # CPU generator is the reproducible choice on MPS.
         generator = torch.Generator("cpu").manual_seed(seed)
 
-        total = params.steps
         call_kwargs = dict(
             prompt=params.prompt,
             negative_prompt=params.negative or None,
             num_inference_steps=params.steps,
             guidance_scale=params.cfg,
-            width=params.width,
-            height=params.height,
             generator=generator,
         )
+
+        if init_name:
+            # img2img output size follows the init image, so we resize it to the
+            # requested dimensions rather than passing width/height to the pipe.
+            call_kwargs["image"] = self._load_init_image(
+                init_name, params.width, params.height
+            )
+            call_kwargs["strength"] = params.strength
+            # img2img only denoises the last `strength` fraction of the schedule,
+            # so the real step count (and the progress bar's total) is smaller.
+            total = max(1, int(params.steps * params.strength))
+        else:
+            call_kwargs["width"] = params.width
+            call_kwargs["height"] = params.height
+            total = params.steps
 
         # Wire up step progress across diffusers API versions.
         sig = inspect.signature(pipe.__call__)
@@ -166,6 +215,9 @@ class Engine:
         meta.add_text("cfg", str(params.cfg))
         meta.add_text("size", f"{params.width}x{params.height}")
         meta.add_text("model", params.model)
+        if getattr(params, "init_image", ""):
+            meta.add_text("init_image", params.init_image)
+            meta.add_text("strength", str(params.strength))
         image.save(path, pnginfo=meta)
         return filename
 

@@ -104,9 +104,8 @@ def models() -> dict:
 
 @app.get("/api/outputs/{filename}")
 def output(filename: str) -> FileResponse:
-    # Guard against path traversal.
-    fpath = (config.OUTPUTS_DIR / filename).resolve()
-    if config.OUTPUTS_DIR.resolve() not in fpath.parents or not fpath.exists():
+    fpath = config.safe_output_path(filename)  # guards against path traversal
+    if fpath is None:
         raise HTTPException(404, "not found")
     return FileResponse(fpath)
 
