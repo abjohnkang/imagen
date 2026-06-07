@@ -76,6 +76,19 @@ class Engine:
 
         pipe = AutoPipelineForText2Image.from_pretrained(model, **kwargs)
 
+        # Swap in a stronger sampler when the model asks for one. DPM++ 2M with
+        # Karras sigmas converges to cleaner, more coherent images than the
+        # stock Euler scheduler at the same step count. Distilled models (Turbo)
+        # carry no scheduler key and keep their baked-in sampler.
+        if mcfg.get("scheduler") == "dpmpp_2m_karras":
+            from diffusers import DPMSolverMultistepScheduler
+
+            pipe.scheduler = DPMSolverMultistepScheduler.from_config(
+                pipe.scheduler.config,
+                use_karras_sigmas=True,
+                algorithm_type="dpmsolver++",
+            )
+
         # Keep memory in check on 16 GB unified memory.
         pipe.enable_attention_slicing()
         if hasattr(pipe, "enable_vae_tiling"):

@@ -36,6 +36,7 @@ function applyModelDefaults() {
   }
   if (m.steps != null) $("steps").value = m.steps;
   if (m.cfg != null) $("cfg").value = m.cfg;
+  if (m.negative != null) $("negative").value = m.negative;
 }
 
 function readParams() {

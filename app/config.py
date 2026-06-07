@@ -11,6 +11,18 @@ OUTPUTS_DIR = BASE_DIR / "outputs"
 MODELS_DIR = BASE_DIR / "models"
 DB_PATH = BASE_DIR / "imagen.db"
 
+# A reusable negative prompt that suppresses the artifacts base diffusion models
+# are most prone to — mangled hands, extra/fused fingers, broken limbs. The UI
+# pre-fills this for guided models so anatomy is cleaner out of the box; it's
+# fully editable. Turbo runs with guidance disabled (cfg 0) and ignores the
+# negative entirely, so it's left blank there.
+ANATOMY_NEGATIVE = (
+    "deformed hands, mutated hands, extra fingers, fused fingers, missing fingers, "
+    "extra limbs, missing limbs, malformed limbs, extra arms, extra legs, "
+    "bad anatomy, disfigured, poorly drawn face, poorly drawn hands, "
+    "low quality, blurry, jpeg artifacts, watermark, text, signature"
+)
+
 # Available models, shown in the UI switcher. Each entry carries the knobs the
 # engine needs to run it within the 16 GB unified-memory budget.
 #
@@ -22,6 +34,12 @@ DB_PATH = BASE_DIR / "imagen.db"
 #   offload        use accelerate model-cpu-offload to fit a large fp32 pipeline
 #                  in 16 GB (keeps idle components on CPU). Needed for SDXL.
 #   sd_safety_checker  this is an SD1.x pipeline that accepts safety_checker=None
+#   scheduler      override the pipeline's default sampler. "dpmpp_2m_karras"
+#                  (DPM++ 2M w/ Karras sigmas) gives sharper, more coherent
+#                  results than the stock Euler scheduler at the same step count.
+#                  Omit for distilled models (Turbo), whose baked-in scheduler
+#                  must not be swapped.
+#   negative       default negative prompt the UI pre-fills for this model.
 #   size           default resolution the UI snaps to when this model is picked
 #   steps / cfg    default sampler settings the UI applies for this model.
 #                  Turbo is distilled for 1-4 steps with guidance disabled
@@ -32,6 +50,8 @@ MODELS = [
         "label": "SD 1.5",
         "dtype": "float32",
         "sd_safety_checker": True,
+        "scheduler": "dpmpp_2m_karras",
+        "negative": ANATOMY_NEGATIVE,
         "size": 512,
         "steps": 30,
         "cfg": 7.5,
@@ -41,9 +61,25 @@ MODELS = [
         "label": "SDXL 1.0",
         "dtype": "float32",
         "offload": True,
+        "scheduler": "dpmpp_2m_karras",
+        "negative": ANATOMY_NEGATIVE,
         "size": 1024,
-        "steps": 25,
+        "steps": 30,
         "cfg": 7.5,
+    },
+    {
+        # Community fine-tune of SDXL tuned for photorealism with notably cleaner
+        # hands and faces than base SDXL. Same architecture/footprint as base, so
+        # it loads through the same pipeline and offload path.
+        "id": "SG161222/RealVisXL_V4.0",
+        "label": "RealVisXL 4.0 (photoreal)",
+        "dtype": "float32",
+        "offload": True,
+        "scheduler": "dpmpp_2m_karras",
+        "negative": ANATOMY_NEGATIVE,
+        "size": 1024,
+        "steps": 30,
+        "cfg": 7.0,
     },
     {
         # Distilled SDXL: 4 steps instead of 25. At 512 the fp32 pipeline fits

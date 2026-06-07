@@ -30,19 +30,30 @@ tuning.
 ### The controls
 
 - **Model** — which AI model generates the image. Picking one automatically sets
-  sensible steps/size for it, so you usually don't need to touch the other knobs.
+  sensible steps/size, a default negative prompt, and the best sampler for it, so
+  you usually don't need to touch the other knobs.
   - **SD 1.5** — fastest and lightest. Good for quick tries.
-  - **SDXL 1.0** — highest quality, but the slowest; generation time scales with
-    your hardware (can be several minutes per image on Apple Silicon).
+  - **SDXL 1.0** — Stability's base XL model. High resolution, but "raw" — it can
+    miss parts of a prompt and produce anatomy glitches (extra fingers, odd
+    limbs). Slowest option; several minutes per image on Apple Silicon.
+  - **RealVisXL 4.0 (photoreal)** — a community fine-tune of SDXL tuned for
+    photorealism with markedly cleaner hands and faces and better prompt
+    adherence than base SDXL. Same speed/size as SDXL — **the recommended default
+    for quality.**
   - **SDXL Turbo (fast)** — SDXL-level quality in only 4 steps. The fast option.
+
+  All models except Turbo use the **DPM++ 2M (Karras)** sampler for sharper,
+  more coherent results than the stock scheduler. Turbo keeps its built-in
+  4-step sampler.
 
 - **Prompt** — describe what you want, in plain words. More detail generally
   helps. Example: `a red lighthouse at dusk, cinematic, highly detailed`. You can
   list a subject, a style, lighting, mood, etc., separated by commas.
 
 - **Negative prompt** — what you want to *avoid*. The model steers away from these
-  words. Common ones: `blurry, low quality, extra fingers, watermark, text`.
-  Leave it blank if you don't care.
+  words. Picking a model pre-fills a sensible anatomy/quality negative (suppressing
+  deformed hands, extra fingers, broken limbs, watermarks, etc.) — you can edit or
+  clear it. Turbo runs with guidance off, so the negative has no effect there.
 
 - **Steps** — how many refinement passes the model makes. Each step takes the
   image from noise toward your prompt.
@@ -81,8 +92,9 @@ Every image you make is saved and shown at the bottom.
 ### A first-try suggestion
 
 Start with **SD 1.5**, a simple prompt, and the default settings — it's the
-quickest way to see a result. Then try the same prompt on **SDXL Turbo** to
-compare quality. Once you find a seed you like, lock it and experiment.
+quickest way to see a result. For a polished final image, switch to **RealVisXL
+4.0**: it's the best quality here and handles hands/anatomy far better than base
+SDXL. Once you find a seed you like, lock it and experiment.
 
 ## What gets stored, and where
 
