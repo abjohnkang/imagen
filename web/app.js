@@ -167,6 +167,12 @@ function applySettings(it) {
   $("width").value = it.width;
   $("height").value = it.height;
   $("seed").value = it.seed;
+  // Restore the img2img strength if this image was made with one; the slider
+  // and its label are otherwise left at whatever they were.
+  if (it.strength != null) {
+    $("strength").value = it.strength;
+    $("strength-val").textContent = parseFloat(it.strength).toFixed(2);
+  }
   showImage(it.filename);
   window.scrollTo({ top: 0, behavior: "smooth" });
 }

@@ -107,10 +107,11 @@ and appear in the UI.
 **v2**
 - SDXL + Turbo/LCM support, model switcher in UI
 - Negative prompts, sampler/scheduler choice, batch generation
+- Image-to-image (generate from an existing output, strength control)
 
 **v3**
 - LoRA / custom checkpoint loading from a watched folder
-- Image-to-image and inpainting
+- Inpainting
 - Upscaling (Real-ESRGAN)
 
 **Later**

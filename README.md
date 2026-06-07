@@ -81,12 +81,44 @@ tuning.
   - Workflow tip: generate with seed `-1` until you get something you like, then
     *lock that seed* and tweak the prompt/steps to refine the same composition.
 
+### Image-to-image (img2img)
+
+Normally each image starts from random noise. **img2img** starts from an
+*existing image* instead: the model partially re-noises it and then denoises
+guided by your prompt, so the result keeps the source's composition while
+shifting toward what you ask for. Use it to refine a generation, restyle it, or
+nudge one detail (e.g. change "standing" to "sitting") without redrawing the
+whole thing.
+
+**How to start one:** in the gallery, hover an image and click **✎** ("use as
+starting image"). That loads the image's settings into the form *and* pins it as
+the starting image — a thumbnail and a **Strength** slider appear above the
+Generate button. Edit the prompt however you like, then **Generate**.
+
+- **Strength** — how far the result moves from the starting image.
+  - **Low (~0.2–0.4):** subtle edit, stays close to the original.
+  - **Mid (~0.5–0.6):** balanced — the default.
+  - **High (~0.8–1.0):** big change; at 1.0 the starting image is essentially
+    ignored (back to text-only).
+- Because img2img only denoises the last *strength* fraction of the steps, it's
+  also **faster** than a full generation at the same step count.
+- The output matches the **Width/Height** in the form — the starting image is
+  resized to fit, so you can change the aspect/size while you're at it.
+- Click **Use text-only ✕** on the strength panel to drop the starting image and
+  go back to a normal from-noise generation.
+
+> Note: SDXL Turbo runs so few steps (4) that at low strength there may be only
+> 1–2 actual denoising steps, so very subtle edits have limited effect there —
+> the guided models give finer img2img control.
+
 ### The gallery
 
 Every image you make is saved and shown at the bottom.
 
 - **Click a thumbnail** to load all of its settings (prompt, seed, model, etc.)
   back into the form — great for making a variation of something you liked.
+- **Click ✎** to load its settings *and* use it as the starting image for
+  img2img (see above).
 - **Hover and click ✕** to delete an image (removes the file too).
 
 ### A first-try suggestion
@@ -101,7 +133,8 @@ SDXL. Once you find a seed you like, lock it and experiment.
 Everything lives under `~/imagen/` (override with `IMAGEN_HOME`):
 
 - `~/imagen/outputs/` — every generated PNG, with its prompt/seed/settings
-  embedded in the file. Kept until you delete it (✕ on the gallery thumbnail).
+  embedded in the file (img2img images also record their starting image and
+  strength). Kept until you delete it (✕ on the gallery thumbnail).
 - `~/imagen/imagen.db` — SQLite index that powers the gallery.
 - `~/imagen/models/` — downloaded model weights (cached, never re-downloaded).
 
