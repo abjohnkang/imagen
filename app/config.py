@@ -123,6 +123,16 @@ DISABLE_SAFETY_CHECKER = os.environ.get("IMAGEN_SAFETY_CHECKER", "off").lower() 
 )
 
 
+def safe_output_path(filename: str) -> Path | None:
+    """Resolve `filename` to an existing file inside OUTPUTS_DIR, or None if it
+    is missing or escapes the directory (path traversal). Callers translate
+    None into their own not-found error."""
+    path = (OUTPUTS_DIR / filename).resolve()
+    if OUTPUTS_DIR.resolve() not in path.parents or not path.exists():
+        return None
+    return path
+
+
 def ensure_dirs() -> None:
     OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
     MODELS_DIR.mkdir(parents=True, exist_ok=True)

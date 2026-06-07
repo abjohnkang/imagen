@@ -100,6 +100,8 @@ class JobManager:
                 "height": p.height,
                 "model": p.model,
                 "created_at": job.created_at,
+                "init_image": p.init_image or None,
+                "strength": p.strength if p.init_image else None,
             }
         )
 

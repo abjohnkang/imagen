@@ -44,6 +44,12 @@ def init() -> None:
         )
         """
     )
+    # Migrate older galleries: add img2img columns if they're missing.
+    cols = {r["name"] for r in _conn.execute("PRAGMA table_info(images)")}
+    if "init_image" not in cols:
+        _conn.execute("ALTER TABLE images ADD COLUMN init_image TEXT")
+    if "strength" not in cols:
+        _conn.execute("ALTER TABLE images ADD COLUMN strength REAL")
     _conn.commit()
 
 
@@ -53,10 +59,10 @@ def insert(row: dict[str, Any]) -> None:
             """
             INSERT INTO images
                 (id, filename, prompt, negative, seed, steps, cfg,
-                 width, height, model, created_at)
+                 width, height, model, created_at, init_image, strength)
             VALUES
                 (:id, :filename, :prompt, :negative, :seed, :steps, :cfg,
-                 :width, :height, :model, :created_at)
+                 :width, :height, :model, :created_at, :init_image, :strength)
             """,
             row,
         )
