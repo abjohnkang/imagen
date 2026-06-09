@@ -4,16 +4,13 @@ const fields = ["prompt", "negative", "steps", "cfg", "width", "height", "seed"]
 
 let MODELS = [];
 let initImage = null; // filename of the img2img starting image, or null
-let currentJobId = null; // the in-flight job, or null when idle
 
-// Toggle the controls between idle and running: disable Generate and reveal
-// Cancel while a job is in flight.
-function setRunning(running) {
-  $("go").disabled = running;
-  $("cancel").hidden = !running;
-  $("cancel").disabled = false;
-  if (!running) currentJobId = null;
-}
+// The client-side view of the generation queue. Each prompt you submit is sent
+// to the server right away — the server runs them one at a time, FIFO — and
+// gets a row here so you can line up several without waiting. Finished jobs drop
+// off into the gallery; failed/cancelled ones stay until you dismiss them.
+//   { jobId, label, status, step, total, seed, filename, error, cancelling }
+let queue = [];
 
 async function init() {
   try {
@@ -83,9 +80,6 @@ async function generate() {
     $("status").textContent = "Enter a prompt first.";
     return;
   }
-  setRunning(true);
-  $("status").textContent = "Queued…";
-  $("bar").style.width = "0";
 
   const res = await fetch("/api/generate", {
     method: "POST",
@@ -93,54 +87,120 @@ async function generate() {
     body: JSON.stringify(params),
   });
   const { job_id } = await res.json();
-  currentJobId = job_id;
-  watch(job_id);
+
+  const item = {
+    jobId: job_id,
+    label: params.prompt.trim(),
+    status: "queued",
+    step: 0,
+    total: 0,
+  };
+  queue.push(item);
+  renderQueue();
+  watch(item);
 }
 
-async function cancelGeneration() {
-  if (!currentJobId) return;
-  $("cancel").disabled = true;
-  $("status").textContent = "Cancelling…";
-  // Tell the server to stop; the WebSocket will report the "cancelled" status
-  // and reset the controls.
-  await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
+// Cancel a job that's still queued or running. The server flips it to
+// "cancelled" and the WebSocket reports back; `cancelling` shows interim
+// feedback meanwhile (the socket keeps streaming the old status until then).
+async function cancelItem(item) {
+  item.cancelling = true;
+  renderQueue();
+  await fetch(`/api/jobs/${item.jobId}/cancel`, { method: "POST" });
 }
 
-function watch(jobId) {
+// Drop a finished (failed/cancelled) row from the list.
+function dismissItem(item) {
+  queue = queue.filter((q) => q !== item);
+  renderQueue();
+}
+
+// One WebSocket per job streams its progress. The server processes jobs FIFO,
+// so queued rows simply wait their turn while their socket reports "queued".
+function watch(item) {
   const proto = location.protocol === "https:" ? "wss" : "ws";
-  const ws = new WebSocket(`${proto}://${location.host}/api/progress/${jobId}`);
+  const ws = new WebSocket(`${proto}://${location.host}/api/progress/${item.jobId}`);
 
   ws.onmessage = (ev) => {
     const job = JSON.parse(ev.data);
-    if (job.status === "running") {
-      const pct = job.total ? Math.round((job.step / job.total) * 100) : 0;
-      $("status").textContent = `Generating… ${job.step}/${job.total}`;
-      $("bar").style.width = pct + "%";
-    } else if (job.status === "queued") {
-      $("status").textContent = "Queued…";
-    } else if (job.status === "done") {
-      $("bar").style.width = "100%";
-      $("status").textContent = `Done · seed ${job.seed}`;
+    Object.assign(item, {
+      status: job.status,
+      step: job.step,
+      total: job.total,
+      seed: job.seed,
+      filename: job.filename,
+      error: job.error,
+    });
+
+    if (job.status === "done") {
+      // The finished image is now in the gallery; preview the latest and drop
+      // this row from the queue.
       showImage(job.filename);
-      $("seed").value = job.seed;
-      setRunning(false);
       loadGallery();
+      queue = queue.filter((q) => q !== item);
       ws.close();
-    } else if (job.status === "cancelled") {
-      $("status").textContent = "Cancelled.";
-      $("bar").style.width = "0";
-      setRunning(false);
-      ws.close();
-    } else if (job.status === "error") {
-      $("status").textContent = "Error: " + job.error;
-      setRunning(false);
+    } else if (job.status === "error" || job.status === "cancelled") {
       ws.close();
     }
+    renderQueue();
   };
   ws.onerror = () => {
-    $("status").textContent = "Connection lost.";
-    setRunning(false);
+    item.status = "error";
+    item.error = "connection lost";
+    renderQueue();
   };
+}
+
+// Rebuild the queue list and drive the headline status/progress bar from
+// whichever job is currently running.
+function renderQueue() {
+  const list = $("queue");
+  list.innerHTML = "";
+  for (const item of queue) list.append(queueRow(item));
+
+  const running = queue.find((q) => q.status === "running");
+  const waiting = queue.filter((q) => q.status === "queued").length;
+  if (running) {
+    const pct = running.total ? Math.round((running.step / running.total) * 100) : 0;
+    $("status").textContent =
+      `Generating… ${running.step}/${running.total}` + (waiting ? ` · ${waiting} queued` : "");
+    $("bar").style.width = pct + "%";
+  } else if (waiting) {
+    $("status").textContent = `${waiting} queued…`;
+    $("bar").style.width = "0";
+  } else {
+    $("status").textContent = "";
+    $("bar").style.width = "0";
+  }
+}
+
+function queueRow(item) {
+  const row = document.createElement("div");
+  row.className = `qitem ${item.status}`;
+
+  const label = document.createElement("div");
+  label.className = "qlabel";
+  label.textContent = item.label;
+  label.title = item.label;
+
+  const state = document.createElement("span");
+  state.className = "qstate";
+  const active = item.status === "queued" || item.status === "running";
+  if (item.cancelling && active) state.textContent = "cancelling…";
+  else if (item.status === "running") state.textContent = `${item.step}/${item.total}`;
+  else if (item.status === "queued") state.textContent = "queued";
+  else if (item.status === "error") state.textContent = "failed";
+  else if (item.status === "cancelled") state.textContent = "cancelled";
+
+  const btn = document.createElement("button");
+  btn.className = "qx ghost";
+  btn.textContent = active ? "Cancel" : "✕";
+  btn.title = active ? "Cancel this job" : "Dismiss";
+  btn.disabled = Boolean(item.cancelling && active);
+  btn.onclick = () => (active ? cancelItem(item) : dismissItem(item));
+
+  row.append(label, state, btn);
+  return row;
 }
 
 function showImage(filename) {
@@ -218,7 +278,6 @@ async function removeImage(id, filename) {
 }
 
 $("go").addEventListener("click", generate);
-$("cancel").addEventListener("click", cancelGeneration);
 $("clear-init").addEventListener("click", clearInitImage);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);

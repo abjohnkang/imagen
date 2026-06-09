@@ -68,8 +68,38 @@ button:disabled { opacity: 0.5; cursor: default; }
 
 .actions { display: flex; gap: 8px; }
 .actions #go { flex: 1; }
-.actions #cancel { align-self: stretch; padding: 10px 16px; font-size: 13px; }
-.actions #cancel[hidden] { display: none; }
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /* Cap at ~5 rows, then scroll — the list doesn't push the page down as you
+     queue more. A hair of extra height hints there's more below the fold. */
+  max-height: 196px;
+  overflow-y: auto;
+}
+.queue-list:empty { display: none; }
+.qitem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #0e0f13;
+}
+.qitem.running { border-color: var(--accent); }
+.qitem.error .qstate { color: #ff6d6d; }
+.qlabel {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qstate { flex: none; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.qx { flex: none; align-self: center; }
 
 .init-row {
   display: flex;

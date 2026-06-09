@@ -69,12 +69,19 @@ class JobManager:
 
     def cancel(self, job_id: str) -> bool:
         """Request cancellation. Returns False if the job is unknown or already
-        finished; otherwise flags it so the worker stops at the next step."""
+        finished; otherwise flags it so the worker stops at the next step.
+
+        A job that hasn't started yet is also marked "cancelled" right here, so
+        the UI reflects it immediately instead of waiting for the worker to drain
+        everything ahead of it. The worker still skips any job whose cancel was
+        requested when it dequeues, so this is safe against the in-flight case."""
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None or job.status in ("done", "error", "cancelled"):
                 return False
             job.cancel_requested = True
+            if job.status == "queued":
+                job.status = "cancelled"
             return True
 
     def _loop(self) -> None:
