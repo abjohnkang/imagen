@@ -17,11 +17,16 @@ from . import db
 from .engine import engine
 
 
+class GenerationCancelled(Exception):
+    """Raised from the step callback to abort an in-flight generation."""
+
+
 @dataclass
 class Job:
     id: str
     params: Any
-    status: str = "queued"  # queued | running | done | error
+    status: str = "queued"  # queued | running | done | error | cancelled
+    cancel_requested: bool = False
     step: int = 0
     total: int = 0
     filename: str | None = None
@@ -62,15 +67,34 @@ class JobManager:
         with self._lock:
             return self._jobs.get(job_id)
 
+    def cancel(self, job_id: str) -> bool:
+        """Request cancellation. Returns False if the job is unknown or already
+        finished; otherwise flags it so the worker stops at the next step."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status in ("done", "error", "cancelled"):
+                return False
+            job.cancel_requested = True
+            return True
+
     def _loop(self) -> None:
         while True:
             job_id = self._queue.get()
             job = self.get(job_id)
             if job is None:
                 continue
+            # Cancelled while still queued — never start it.
+            if job.cancel_requested:
+                job.status = "cancelled"
+                self._queue.task_done()
+                continue
             job.status = "running"
             try:
                 def on_step(step: int, total: int) -> None:
+                    # Abort between steps if a cancel came in. Raising here
+                    # unwinds out of the pipeline so no partial image is saved.
+                    if job.cancel_requested:
+                        raise GenerationCancelled
                     job.step = step
                     job.total = total
 
@@ -79,6 +103,8 @@ class JobManager:
                 job.seed = seed
                 job.status = "done"
                 self._record(job)
+            except GenerationCancelled:
+                job.status = "cancelled"
             except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
                 job.status = "error"
                 job.error = str(exc)
