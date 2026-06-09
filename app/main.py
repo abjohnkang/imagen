@@ -50,6 +50,13 @@ def get_job(job_id: str) -> dict:
     return job.to_dict()
 
 
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    if not manager.cancel(job_id):
+        raise HTTPException(404, "job not found or already finished")
+    return {"cancelling": job_id}
+
+
 @app.websocket("/api/progress/{job_id}")
 async def progress(ws: WebSocket, job_id: str) -> None:
     await ws.accept()
@@ -60,7 +67,7 @@ async def progress(ws: WebSocket, job_id: str) -> None:
                 await ws.send_json({"status": "error", "error": "job not found"})
                 break
             await ws.send_json(job.to_dict())
-            if job.status in ("done", "error"):
+            if job.status in ("done", "error", "cancelled"):
                 break
             await asyncio.sleep(0.2)
     except WebSocketDisconnect:
@@ -74,12 +81,17 @@ def gallery(limit: int = 60, offset: int = 0) -> list[dict]:
 
 @app.delete("/api/gallery/{image_id}")
 def delete_image(image_id: str) -> dict:
-    filename = db.delete(image_id)
+    # Delete the file before the row: if the unlink fails, the gallery entry
+    # survives so the image stays visible and the delete is retryable — rather
+    # than dropping the row and orphaning the file on disk with no way to reach
+    # it from the UI.
+    filename = db.peek(image_id)
     if filename is None:
         raise HTTPException(404, "image not found")
     fpath = config.OUTPUTS_DIR / filename
     if fpath.exists():
         fpath.unlink()
+    db.delete(image_id)
     return {"deleted": image_id}
 
 

@@ -66,6 +66,11 @@ button {
 }
 button:disabled { opacity: 0.5; cursor: default; }
 
+.actions { display: flex; gap: 8px; }
+.actions #go { flex: 1; }
+.actions #cancel { align-self: stretch; padding: 10px 16px; font-size: 13px; }
+.actions #cancel[hidden] { display: none; }
+
 .init-row {
   display: flex;
   gap: 12px;

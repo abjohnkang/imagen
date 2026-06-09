@@ -4,6 +4,16 @@ const fields = ["prompt", "negative", "steps", "cfg", "width", "height", "seed"]
 
 let MODELS = [];
 let initImage = null; // filename of the img2img starting image, or null
+let currentJobId = null; // the in-flight job, or null when idle
+
+// Toggle the controls between idle and running: disable Generate and reveal
+// Cancel while a job is in flight.
+function setRunning(running) {
+  $("go").disabled = running;
+  $("cancel").hidden = !running;
+  $("cancel").disabled = false;
+  if (!running) currentJobId = null;
+}
 
 async function init() {
   try {
@@ -73,7 +83,7 @@ async function generate() {
     $("status").textContent = "Enter a prompt first.";
     return;
   }
-  $("go").disabled = true;
+  setRunning(true);
   $("status").textContent = "Queued…";
   $("bar").style.width = "0";
 
@@ -83,7 +93,17 @@ async function generate() {
     body: JSON.stringify(params),
   });
   const { job_id } = await res.json();
+  currentJobId = job_id;
   watch(job_id);
+}
+
+async function cancelGeneration() {
+  if (!currentJobId) return;
+  $("cancel").disabled = true;
+  $("status").textContent = "Cancelling…";
+  // Tell the server to stop; the WebSocket will report the "cancelled" status
+  // and reset the controls.
+  await fetch(`/api/jobs/${currentJobId}/cancel`, { method: "POST" });
 }
 
 function watch(jobId) {
@@ -103,18 +123,23 @@ function watch(jobId) {
       $("status").textContent = `Done · seed ${job.seed}`;
       showImage(job.filename);
       $("seed").value = job.seed;
-      $("go").disabled = false;
+      setRunning(false);
       loadGallery();
+      ws.close();
+    } else if (job.status === "cancelled") {
+      $("status").textContent = "Cancelled.";
+      $("bar").style.width = "0";
+      setRunning(false);
       ws.close();
     } else if (job.status === "error") {
       $("status").textContent = "Error: " + job.error;
-      $("go").disabled = false;
+      setRunning(false);
       ws.close();
     }
   };
   ws.onerror = () => {
     $("status").textContent = "Connection lost.";
-    $("go").disabled = false;
+    setRunning(false);
   };
 }
 
@@ -193,6 +218,7 @@ async function removeImage(id, filename) {
 }
 
 $("go").addEventListener("click", generate);
+$("cancel").addEventListener("click", cancelGeneration);
 $("clear-init").addEventListener("click", clearInitImage);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
