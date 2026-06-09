@@ -78,6 +78,14 @@ def list_images(limit: int = 60, offset: int = 0) -> list[dict[str, Any]]:
         return [dict(r) for r in cur.fetchall()]
 
 
+def peek(image_id: str) -> str | None:
+    """Return a row's filename without deleting it, or None if it doesn't exist."""
+    with _lock:
+        cur = _conn.execute("SELECT filename FROM images WHERE id = ?", (image_id,))
+        row = cur.fetchone()
+        return row["filename"] if row is not None else None
+
+
 def delete(image_id: str) -> str | None:
     """Remove a row; returns the filename so the caller can unlink the file."""
     with _lock:
