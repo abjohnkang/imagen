@@ -245,7 +245,13 @@ async function loadGallery() {
     const img = document.createElement("img");
     img.src = `/api/outputs/${it.filename}`;
     img.title = it.prompt;
-    img.onclick = () => selectImage(i);
+    // Clicking the photo opens it in the big preview and scrolls up to it.
+    // (The checkbox and arrow keys deliberately don't scroll — see pickAt /
+    // navigateGallery.)
+    img.onclick = () => {
+      selectImage(i);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
 
     const pick = document.createElement("button");
     pick.className = "pick";
@@ -280,9 +286,9 @@ async function loadGallery() {
 }
 
 // Open a gallery image by its index: apply its settings, show it in the
-// preview, and remember it so the arrow keys can step from here. Never scrolls
-// the page — selecting a photo (by click, checkbox, or arrow key) updates the
-// preview in place rather than yanking the view around.
+// preview, and remember it so the arrow keys can step from here. Doesn't scroll
+// on its own — the checkbox and arrow keys update the preview in place; only a
+// direct photo click scrolls up to the preview (see loadGallery's img.onclick).
 function selectImage(index) {
   const it = galleryItems[index];
   if (!it) return;
