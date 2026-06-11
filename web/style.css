@@ -156,6 +156,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .gallery figure { margin: 0; position: relative; cursor: pointer; }
 .gallery img { width: 100%; border-radius: 8px; display: block; border: 1px solid var(--border); }
+.gallery figure.selected img { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .gallery .del, .gallery .edit {
   position: absolute; top: 6px;
   background: rgba(0,0,0,0.6); color: white; border: none;

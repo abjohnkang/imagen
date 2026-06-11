@@ -5,6 +5,12 @@ const fields = ["prompt", "negative", "steps", "cfg", "width", "height", "seed"]
 let MODELS = [];
 let initImage = null; // filename of the img2img starting image, or null
 
+// The gallery as last loaded (newest first), plus which image is "open" in the
+// preview. Tracked by id rather than index so the selection survives the
+// reloads that happen after every generation (which renumber the grid).
+let galleryItems = [];
+let selectedId = null;
+
 // The client-side view of the generation queue. Each prompt you submit is sent
 // to the server right away — the server runs them one at a time, FIFO — and
 // gets a row here so you can line up several without waiting. Finished and
@@ -216,15 +222,16 @@ function showImage(filename) {
 
 async function loadGallery() {
   const items = await (await fetch("/api/gallery")).json();
+  galleryItems = items;
   const gal = $("gallery");
   gal.innerHTML = "";
-  for (const it of items) {
+  for (const [i, it] of items.entries()) {
     const fig = document.createElement("figure");
 
     const img = document.createElement("img");
     img.src = `/api/outputs/${it.filename}`;
     img.title = it.prompt;
-    img.onclick = () => applySettings(it);
+    img.onclick = () => selectImage(i, true);
 
     const edit = document.createElement("button");
     edit.className = "edit";
@@ -246,6 +253,58 @@ async function loadGallery() {
     fig.append(img, edit, del);
     gal.append(fig);
   }
+  highlightSelected();
+}
+
+// Open a gallery image by its index: apply its settings, show it in the
+// preview, and remember it so the arrow keys can step from here. `scroll` brings
+// the page up to the big preview — wanted on a mouse click, but NOT on arrow-key
+// browsing, where forcing the page to move would be jarring.
+function selectImage(index, scroll = false) {
+  const it = galleryItems[index];
+  if (!it) return;
+  selectedId = it.id;
+  applySettings(it);
+  highlightSelected();
+  if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+// Mark the currently open image in the grid. We deliberately don't scroll it
+// into view: arrow-key browsing keeps you at the top looking at the large
+// preview, so pulling the page down to the gallery would be disruptive.
+function highlightSelected() {
+  const figs = $("gallery").children;
+  for (let i = 0; i < figs.length; i++) {
+    const on = galleryItems[i] && galleryItems[i].id === selectedId;
+    figs[i].classList.toggle("selected", on);
+  }
+}
+
+// How many columns the responsive grid is currently showing: count the figures
+// sharing the top row's offset. Used so Up/Down step by a full row at any width.
+function galleryColumns() {
+  const figs = $("gallery").children;
+  if (!figs.length) return 1;
+  const top = figs[0].offsetTop;
+  let cols = 0;
+  for (const f of figs) {
+    if (f.offsetTop !== top) break;
+    cols++;
+  }
+  return Math.max(1, cols);
+}
+
+// Step through the gallery with the arrow keys. The grid is newest-first and
+// reads left-to-right, so ArrowRight moves to the next (older) image and
+// ArrowLeft to the previous (newer) one; Up/Down move a whole row at a time.
+// With nothing open yet, the first press opens an end of the list.
+function navigateGallery(delta) {
+  if (!galleryItems.length) return;
+  const idx = galleryItems.findIndex((it) => it.id === selectedId);
+  let next;
+  if (idx === -1) next = delta > 0 ? 0 : galleryItems.length - 1;
+  else next = Math.max(0, Math.min(galleryItems.length - 1, idx + delta));
+  selectImage(next);
 }
 
 function applySettings(it) {
@@ -264,7 +323,6 @@ function applySettings(it) {
     $("strength-val").textContent = parseFloat(it.strength).toFixed(2);
   }
   showImage(it.filename);
-  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Load an existing generation's settings AND set it as the img2img base, so
@@ -281,6 +339,22 @@ async function removeImage(id, filename) {
   if (filename && filename === initImage) clearInitImage();
   loadGallery();
 }
+
+// Arrow keys browse the gallery: left/right by one image, up/down by a whole
+// row. Only when the user isn't typing in a field or dragging the strength
+// slider, where arrows have their own meaning.
+document.addEventListener("keydown", (e) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  let delta;
+  if (e.key === "ArrowLeft") delta = -1;
+  else if (e.key === "ArrowRight") delta = 1;
+  else if (e.key === "ArrowUp") delta = -galleryColumns();
+  else if (e.key === "ArrowDown") delta = galleryColumns();
+  else return;
+  e.preventDefault();
+  navigateGallery(delta);
+});
 
 $("go").addEventListener("click", generate);
 $("clear-init").addEventListener("click", clearInitImage);
