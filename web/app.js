@@ -332,6 +332,33 @@ function clearSelection() {
   renderSelection();
 }
 
+// Delete every ticked photo at once, after a confirmation (these can't be
+// undone). Unknown/already-gone ids are ignored server-side.
+async function deleteSelected() {
+  const items = galleryItems.filter((it) => selected.has(it.id));
+  if (!items.length) return;
+  const n = items.length;
+  if (!confirm(`Delete ${n} selected photo${n > 1 ? "s" : ""}? This can't be undone.`)) return;
+
+  await fetch("/api/gallery/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ids: items.map((it) => it.id) }),
+  });
+
+  // Drop dangling references to anything we just removed.
+  const gone = new Set(items.map((it) => it.filename));
+  if (initImage && gone.has(initImage)) clearInitImage();
+  if (currentPreview && gone.has(currentPreview)) {
+    currentPreview = null;
+    $("preview").style.display = "none";
+    $("download-current").hidden = true;
+  }
+  selected.clear();
+  lastPickId = null;
+  loadGallery();
+}
+
 // Reflect the current selection in the grid (checkmarks + outlines) and the
 // gallery toolbar (count + show/hide). Reads ids off each figure's dataset so
 // it works without rebuilding the DOM.
@@ -551,6 +578,7 @@ $("go").addEventListener("click", generate);
 $("clear-init").addEventListener("click", clearInitImage);
 $("download-current").addEventListener("click", downloadCurrent);
 $("download-selected").addEventListener("click", downloadSelected);
+$("delete-selected").addEventListener("click", deleteSelected);
 $("clear-selection").addEventListener("click", clearSelection);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);

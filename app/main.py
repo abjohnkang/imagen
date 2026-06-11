@@ -81,20 +81,36 @@ def gallery(limit: int = 60, offset: int = 0) -> list[dict]:
     return db.list_images(limit=limit, offset=offset)
 
 
-@app.delete("/api/gallery/{image_id}")
-def delete_image(image_id: str) -> dict:
-    # Delete the file before the row: if the unlink fails, the gallery entry
-    # survives so the image stays visible and the delete is retryable — rather
-    # than dropping the row and orphaning the file on disk with no way to reach
-    # it from the UI.
+def _delete_image(image_id: str) -> bool:
+    """Remove one image (file then row). Returns False if the id is unknown.
+
+    Delete the file before the row: if the unlink fails, the gallery entry
+    survives so the image stays visible and the delete is retryable — rather
+    than dropping the row and orphaning the file on disk with no way to reach
+    it from the UI.
+    """
     filename = db.peek(image_id)
     if filename is None:
-        raise HTTPException(404, "image not found")
+        return False
     fpath = config.OUTPUTS_DIR / filename
     if fpath.exists():
         fpath.unlink()
     db.delete(image_id)
+    return True
+
+
+@app.delete("/api/gallery/{image_id}")
+def delete_image(image_id: str) -> dict:
+    if not _delete_image(image_id):
+        raise HTTPException(404, "image not found")
     return {"deleted": image_id}
+
+
+@app.post("/api/gallery/delete")
+def delete_images(ids: list[str] = Body(..., embed=True)) -> dict:
+    """Delete several images at once; unknown ids are skipped, not an error."""
+    deleted = [i for i in ids if _delete_image(i)]
+    return {"deleted": deleted}
 
 
 @app.get("/api/models")
