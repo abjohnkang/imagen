@@ -387,10 +387,52 @@ async function downloadCurrent() {
   await writeBlob(handle, blob, currentPreview);
 }
 
-// Zip every ticked image (server-side) and save the bundle in one go.
+// Download the ticked images. Default is individual PNGs; tick "as .zip" to get
+// one bundle instead.
 async function downloadSelected() {
   const filenames = galleryItems.filter((it) => selected.has(it.id)).map((it) => it.filename);
   if (!filenames.length) return;
+  if ($("zip-option").checked) await downloadSelectedZip(filenames);
+  else await downloadSelectedPngs(filenames);
+}
+
+// Save each PNG separately. Where supported (Chromium), pick a folder once and
+// write them all into it; otherwise fall back to one download per file.
+async function downloadSelectedPngs(filenames) {
+  if (window.showDirectoryPicker) {
+    let dir;
+    try {
+      dir = await window.showDirectoryPicker({ mode: "readwrite" });
+    } catch (e) {
+      if (e.name === "AbortError") return; // cancelled
+      dir = null; // unsupported/denied → fall through to per-file downloads
+    }
+    if (dir) {
+      for (const name of filenames) {
+        const blob = await (await fetch(`/api/outputs/${encodeURIComponent(name)}`)).blob();
+        const handle = await dir.getFileHandle(name, { create: true });
+        const w = await handle.createWritable();
+        await w.write(blob);
+        await w.close();
+      }
+      return;
+    }
+  }
+  // Fallback: trigger a normal download for each file (goes to the default
+  // location). The small gap keeps browsers from coalescing/dropping them.
+  for (const name of filenames) {
+    const a = document.createElement("a");
+    a.href = `/api/outputs/${encodeURIComponent(name)}`;
+    a.download = name;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    await new Promise((r) => setTimeout(r, 150));
+  }
+}
+
+// Zip every ticked image (server-side) and save the bundle in one go.
+async function downloadSelectedZip(filenames) {
   const name = "imagen-images.zip";
   const handle = await pickSaveHandle(name);
   if (handle === null) return;
