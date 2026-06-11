@@ -245,7 +245,7 @@ async function loadGallery() {
     const img = document.createElement("img");
     img.src = `/api/outputs/${it.filename}`;
     img.title = it.prompt;
-    img.onclick = () => selectImage(i, true);
+    img.onclick = () => selectImage(i);
 
     const pick = document.createElement("button");
     pick.className = "pick";
@@ -280,16 +280,15 @@ async function loadGallery() {
 }
 
 // Open a gallery image by its index: apply its settings, show it in the
-// preview, and remember it so the arrow keys can step from here. `scroll` brings
-// the page up to the big preview — wanted on a mouse click, but NOT on arrow-key
-// browsing, where forcing the page to move would be jarring.
-function selectImage(index, scroll = false) {
+// preview, and remember it so the arrow keys can step from here. Never scrolls
+// the page — selecting a photo (by click, checkbox, or arrow key) updates the
+// preview in place rather than yanking the view around.
+function selectImage(index) {
   const it = galleryItems[index];
   if (!it) return;
   selectedId = it.id;
   applySettings(it);
   highlightSelected();
-  if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 // Mark the currently open image in the grid. We deliberately don't scroll it
@@ -322,6 +321,8 @@ function pickAt(index, shiftKey) {
     selected.add(it.id);
   }
   lastPickId = it.id;
+  // A mouse pick also opens the photo in the big preview (without scrolling).
+  selectImage(index);
   renderSelection();
 }
 
@@ -475,6 +476,26 @@ function navigateGallery(delta) {
   selectImage(next);
 }
 
+// Shift+Arrow: move the focus the same way, but ALSO tick every photo stepped
+// over (inclusive of both ends) for download — the keyboard twin of Shift+Click.
+// Like Shift+Click it only adds; use Clear or individual clicks to remove.
+function extendSelection(delta) {
+  if (!galleryItems.length) return;
+  let idx = galleryItems.findIndex((it) => it.id === selectedId);
+  let next;
+  if (idx === -1) {
+    next = delta > 0 ? 0 : galleryItems.length - 1;
+    idx = next;
+  } else {
+    next = Math.max(0, Math.min(galleryItems.length - 1, idx + delta));
+  }
+  const [a, b] = idx < next ? [idx, next] : [next, idx];
+  for (let i = a; i <= b; i++) selected.add(galleryItems[i].id);
+  lastPickId = galleryItems[next].id;
+  selectImage(next);
+  renderSelection();
+}
+
 function applySettings(it) {
   if (it.model && MODELS.some((m) => m.id === it.model)) $("model").value = it.model;
   $("prompt").value = it.prompt || "";
@@ -509,8 +530,9 @@ async function removeImage(id, filename) {
 }
 
 // Arrow keys browse the gallery: left/right by one image, up/down by a whole
-// row. Only when the user isn't typing in a field or dragging the strength
-// slider, where arrows have their own meaning.
+// row. Holding Shift extends the download selection instead of just moving.
+// Only when the user isn't typing in a field or dragging the strength slider,
+// where arrows have their own meaning.
 document.addEventListener("keydown", (e) => {
   const tag = (document.activeElement && document.activeElement.tagName) || "";
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
@@ -521,7 +543,8 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "ArrowDown") delta = galleryColumns();
   else return;
   e.preventDefault();
-  navigateGallery(delta);
+  if (e.shiftKey) extendSelection(delta);
+  else navigateGallery(delta);
 });
 
 $("go").addEventListener("click", generate);
