@@ -7,8 +7,8 @@ let initImage = null; // filename of the img2img starting image, or null
 
 // The client-side view of the generation queue. Each prompt you submit is sent
 // to the server right away — the server runs them one at a time, FIFO — and
-// gets a row here so you can line up several without waiting. Finished jobs drop
-// off into the gallery; failed/cancelled ones stay until you dismiss them.
+// gets a row here so you can line up several without waiting. Finished and
+// cancelled jobs drop off automatically; failed ones stay until you dismiss them.
 //   { jobId, label, status, step, total, seed, filename, error, cancelling }
 let queue = [];
 
@@ -139,7 +139,12 @@ function watch(item) {
       loadGallery();
       queue = queue.filter((q) => q !== item);
       ws.close();
-    } else if (job.status === "error" || job.status === "cancelled") {
+    } else if (job.status === "cancelled") {
+      // "cancelling…" is just interim feedback; once the server confirms the
+      // cancel, drop the row entirely rather than leaving a "cancelled" entry.
+      queue = queue.filter((q) => q !== item);
+      ws.close();
+    } else if (job.status === "error") {
       ws.close();
     }
     renderQueue();
