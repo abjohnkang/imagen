@@ -208,3 +208,14 @@ button:disabled { opacity: 0.5; cursor: default; }
 .gallery figure:hover .pick { opacity: 1; }
 .gallery figure.checked .pick { opacity: 1; background: var(--accent); border-color: var(--accent); }
 .gallery figure.checked img { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 0 24px 40px;
+}
+.pager[hidden] { display: none; }
+.pager .ghost { padding: 6px 12px; font-size: 12px; }
+.page-info { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }

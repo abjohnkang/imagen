@@ -69,6 +69,13 @@ def insert(row: dict[str, Any]) -> None:
         _conn.commit()
 
 
+def count() -> int:
+    """Total number of images in the gallery (for pagination)."""
+    with _lock:
+        cur = _conn.execute("SELECT COUNT(*) AS n FROM images")
+        return cur.fetchone()["n"]
+
+
 def list_images(limit: int = 60, offset: int = 0) -> list[dict[str, Any]]:
     with _lock:
         cur = _conn.execute(

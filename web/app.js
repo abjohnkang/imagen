@@ -10,12 +10,26 @@ let initImage = null; // filename of the img2img starting image, or null
 // reloads that happen after every generation (which renumber the grid).
 let galleryItems = [];
 let selectedId = null;
+// The gallery is paged: 8 rows of photos per page, newest first. The grid is
+// responsive, so a page is 8 × however many columns currently fit (see
+// galleryPageSize). galleryItems holds only the current page; galleryPage is the
+// zero-based page; galleryTotal is the total image count (for bounds + readout).
+const GALLERY_ROWS = 8;
+// Mirror of the .gallery grid metrics in style.css, used to work out the column
+// count from the container width before any thumbnails have rendered.
+const GALLERY_MIN_COL = 160; // minmax() floor
+const GALLERY_GAP = 12; // grid gap
+const GALLERY_PADDING = 24; // left/right padding
+let galleryPage = 0;
+let galleryTotal = 0;
 
 // Filename currently shown in the big preview (for the "Save image" button).
 let currentPreview = null;
-// Ids ticked for "Download selected" (a multi-select, separate from the single
-// preview-open image above). Held by id so it survives gallery reloads.
-let selected = new Set();
+// Photos ticked for "Download selected"/"Delete selected" — a multi-select kept
+// separate from the single preview-open image above. A Map of id → item so the
+// selection (and the filenames it needs) survives paging: ticks made on page 1
+// still count when you act from page 3.
+let selected = new Map();
 // The last thumbnail picked, the anchor for Shift+Click range selection. By id
 // (not index) so it stays valid after the grid renumbers on a reload.
 let lastPickId = null;
@@ -148,10 +162,10 @@ function watch(item) {
     });
 
     if (job.status === "done") {
-      // The finished image is now in the gallery; preview the latest and drop
-      // this row from the queue.
+      // The finished image is now in the gallery; preview it and jump to page 1
+      // (the newest page, where it lives), then drop this row from the queue.
       showImage(job.filename);
-      loadGallery();
+      loadGallery(0);
       queue = queue.filter((q) => q !== item);
       ws.close();
     } else if (job.status === "cancelled") {
@@ -231,58 +245,100 @@ function showImage(filename) {
   $("download-current").hidden = false;
 }
 
-async function loadGallery() {
-  const items = await (await fetch("/api/gallery")).json();
+// Photos per page: 8 rows × however many columns the responsive grid currently
+// shows. Recomputed each load so it tracks the window width. Derived from the
+// container width (works even before any thumbnail has rendered) using the same
+// auto-fill maths the CSS grid applies: cols = ⌊(W + gap) / (minCol + gap)⌋.
+function galleryPageSize() {
+  const contentWidth = $("gallery").clientWidth - 2 * GALLERY_PADDING;
+  const cols = Math.max(
+    1,
+    Math.floor((contentWidth + GALLERY_GAP) / (GALLERY_MIN_COL + GALLERY_GAP)),
+  );
+  return GALLERY_ROWS * cols;
+}
+
+// Load one page of the gallery (8 rows, newest first) and render it, fully
+// replacing whatever page was shown. `page` is clamped into range, so callers
+// can pass galleryPage±1 freely. A new generation passes 0 to jump back to the
+// newest page; deletes reload the current page (stepping back if it emptied).
+async function loadGallery(page = galleryPage) {
+  galleryTotal = (await (await fetch("/api/gallery/count")).json()).count;
+  const pageSize = galleryPageSize();
+  const pages = Math.max(1, Math.ceil(galleryTotal / pageSize));
+  galleryPage = Math.min(Math.max(0, page), pages - 1);
+
+  const offset = galleryPage * pageSize;
+  const items = await (await fetch(`/api/gallery?limit=${pageSize}&offset=${offset}`)).json();
   galleryItems = items;
-  // Forget any ticked images that no longer exist (e.g. just deleted).
-  selected = new Set([...selected].filter((id) => items.some((it) => it.id === id)));
+
   const gal = $("gallery");
   gal.innerHTML = "";
-  for (const [i, it] of items.entries()) {
-    const fig = document.createElement("figure");
-    fig.dataset.id = it.id;
-
-    const img = document.createElement("img");
-    img.src = `/api/outputs/${it.filename}`;
-    img.title = it.prompt;
-    // Clicking the photo opens it in the big preview and scrolls up to it.
-    // (The checkbox and arrow keys deliberately don't scroll — see pickAt /
-    // navigateGallery.)
-    img.onclick = () => {
-      selectImage(i);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-    };
-
-    const pick = document.createElement("button");
-    pick.className = "pick";
-    pick.title = "Select for download (Shift+Click for a range)";
-    pick.onclick = (e) => {
-      e.stopPropagation();
-      pickAt(i, e.shiftKey);
-    };
-
-    const edit = document.createElement("button");
-    edit.className = "edit";
-    edit.textContent = "✎";
-    edit.title = "Use as starting image (img2img)";
-    edit.onclick = (e) => {
-      e.stopPropagation();
-      useAsInit(it);
-    };
-
-    const del = document.createElement("button");
-    del.className = "del";
-    del.textContent = "✕";
-    del.onclick = (e) => {
-      e.stopPropagation();
-      removeImage(it.id, it.filename);
-    };
-
-    fig.append(img, pick, edit, del);
-    gal.append(fig);
-  }
+  for (const [i, it] of items.entries()) gal.append(galleryFigure(it, i));
   highlightSelected();
   renderSelection();
+  renderPager(pages);
+}
+
+// Show the buttons + "Page X / Y" readout, disabling the ends. Hidden entirely
+// when everything fits on a single page.
+function renderPager(pages) {
+  $("pager").hidden = pages <= 1;
+  $("page-info").textContent = `Page ${galleryPage + 1} / ${pages}`;
+  $("prev-page").disabled = galleryPage === 0;
+  $("next-page").disabled = galleryPage >= pages - 1;
+}
+
+// Turn to an adjacent page and scroll the gallery heading into view, so the new
+// page starts from its top rather than leaving you down by the pager.
+async function goToPage(page) {
+  await loadGallery(page);
+  document.querySelector(".gallery-head").scrollIntoView({ behavior: "smooth" });
+}
+
+// Build one gallery thumbnail (figure) for the image at index `i` on the page.
+function galleryFigure(it, i) {
+  const fig = document.createElement("figure");
+  fig.dataset.id = it.id;
+
+  const img = document.createElement("img");
+  img.src = `/api/outputs/${it.filename}`;
+  img.title = it.prompt;
+  // Clicking the photo opens it in the big preview and scrolls up to it.
+  // (The checkbox and arrow keys deliberately don't scroll — see pickAt /
+  // navigateGallery.)
+  img.onclick = () => {
+    selectImage(i);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const pick = document.createElement("button");
+  pick.className = "pick";
+  pick.title = "Select for download (Shift+Click for a range)";
+  pick.onclick = (e) => {
+    e.stopPropagation();
+    pickAt(i, e.shiftKey);
+  };
+
+  const edit = document.createElement("button");
+  edit.className = "edit";
+  edit.textContent = "✎";
+  edit.title = "Use as starting image (img2img)";
+  edit.onclick = (e) => {
+    e.stopPropagation();
+    useAsInit(it);
+  };
+
+  const del = document.createElement("button");
+  del.className = "del";
+  del.textContent = "✕";
+  del.onclick = (e) => {
+    e.stopPropagation();
+    removeImage(it.id, it.filename);
+  };
+
+  fig.append(img, pick, edit, del);
+  return fig;
 }
 
 // Open a gallery image by its index: apply its settings, show it in the
@@ -320,11 +376,11 @@ function pickAt(index, shiftKey) {
   const anchor = lastPickId === null ? -1 : galleryItems.findIndex((x) => x.id === lastPickId);
   if (shiftKey && anchor !== -1) {
     const [a, b] = anchor < index ? [anchor, index] : [index, anchor];
-    for (let i = a; i <= b; i++) selected.add(galleryItems[i].id);
+    for (let i = a; i <= b; i++) selected.set(galleryItems[i].id, galleryItems[i]);
   } else if (selected.has(it.id)) {
     selected.delete(it.id);
   } else {
-    selected.add(it.id);
+    selected.set(it.id, it);
   }
   lastPickId = it.id;
   // A mouse pick also opens the photo in the big preview (without scrolling).
@@ -338,10 +394,10 @@ function clearSelection() {
   renderSelection();
 }
 
-// Delete every ticked photo at once, after a confirmation (these can't be
-// undone). Unknown/already-gone ids are ignored server-side.
+// Delete every ticked photo at once (across all pages), after a confirmation
+// (these can't be undone). Unknown/already-gone ids are ignored server-side.
 async function deleteSelected() {
-  const items = galleryItems.filter((it) => selected.has(it.id));
+  const items = [...selected.values()];
   if (!items.length) return;
   const n = items.length;
   if (!confirm(`Delete ${n} selected photo${n > 1 ? "s" : ""}? This can't be undone.`)) return;
@@ -424,7 +480,7 @@ async function downloadCurrent() {
 // Download the ticked images. Default is individual PNGs; tick "as .zip" to get
 // one bundle instead.
 async function downloadSelected() {
-  const filenames = galleryItems.filter((it) => selected.has(it.id)).map((it) => it.filename);
+  const filenames = [...selected.values()].map((it) => it.filename);
   if (!filenames.length) return;
   if ($("zip-option").checked) await downloadSelectedZip(filenames);
   else await downloadSelectedPngs(filenames);
@@ -523,7 +579,7 @@ function extendSelection(delta) {
     next = Math.max(0, Math.min(galleryItems.length - 1, idx + delta));
   }
   const [a, b] = idx < next ? [idx, next] : [next, idx];
-  for (let i = a; i <= b; i++) selected.add(galleryItems[i].id);
+  for (let i = a; i <= b; i++) selected.set(galleryItems[i].id, galleryItems[i]);
   lastPickId = galleryItems[next].id;
   selectImage(next);
   renderSelection();
@@ -559,6 +615,7 @@ async function removeImage(id, filename) {
   await fetch(`/api/gallery/${id}`, { method: "DELETE" });
   // If the deleted image was the current img2img base, drop the dangling ref.
   if (filename && filename === initImage) clearInitImage();
+  selected.delete(id); // and untick it if it was selected for download
   loadGallery();
 }
 
@@ -589,4 +646,9 @@ $("clear-selection").addEventListener("click", clearSelection);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
 });
+
+// Pager: "Newer" steps toward page 1, "Older" toward the end of the gallery.
+$("prev-page").addEventListener("click", () => goToPage(galleryPage - 1));
+$("next-page").addEventListener("click", () => goToPage(galleryPage + 1));
+
 init();

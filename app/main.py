@@ -81,6 +81,12 @@ def gallery(limit: int = 60, offset: int = 0) -> list[dict]:
     return db.list_images(limit=limit, offset=offset)
 
 
+@app.get("/api/gallery/count")
+def gallery_count() -> dict:
+    """Total image count, so the UI can compute how many pages there are."""
+    return {"count": db.count()}
+
+
 def _delete_image(image_id: str) -> bool:
     """Remove one image (file then row). Returns False if the id is unknown.
 
