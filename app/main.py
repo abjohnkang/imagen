@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import zipfile
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi import Body, FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -112,6 +114,30 @@ def models() -> dict:
             for m in config.MODELS
         ],
     }
+
+
+@app.post("/api/download")
+def download_zip(filenames: list[str] = Body(..., embed=True)) -> Response:
+    """Bundle the requested output images into a single zip for download. Each
+    name is validated through safe_output_path, so unknown or traversing names
+    are silently skipped rather than trusted."""
+    buf = io.BytesIO()
+    added = 0
+    # PNGs are already compressed, so store (don't re-deflate) to stay fast.
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+        for name in filenames:
+            path = config.safe_output_path(name)
+            if path is None:
+                continue
+            zf.write(path, arcname=path.name)
+            added += 1
+    if added == 0:
+        raise HTTPException(404, "no valid images to download")
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="imagen-images.zip"'},
+    )
 
 
 @app.get("/api/outputs/{filename}")

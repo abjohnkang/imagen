@@ -11,6 +11,15 @@ let initImage = null; // filename of the img2img starting image, or null
 let galleryItems = [];
 let selectedId = null;
 
+// Filename currently shown in the big preview (for the "Save image" button).
+let currentPreview = null;
+// Ids ticked for "Download selected" (a multi-select, separate from the single
+// preview-open image above). Held by id so it survives gallery reloads.
+let selected = new Set();
+// The last thumbnail picked, the anchor for Shift+Click range selection. By id
+// (not index) so it stays valid after the grid renumbers on a reload.
+let lastPickId = null;
+
 // The client-side view of the generation queue. Each prompt you submit is sent
 // to the server right away — the server runs them one at a time, FIFO — and
 // gets a row here so you can line up several without waiting. Finished and
@@ -218,20 +227,33 @@ function showImage(filename) {
   const img = $("preview");
   img.src = `/api/outputs/${filename}?t=${Date.now()}`;
   img.style.display = "block";
+  currentPreview = filename;
+  $("download-current").hidden = false;
 }
 
 async function loadGallery() {
   const items = await (await fetch("/api/gallery")).json();
   galleryItems = items;
+  // Forget any ticked images that no longer exist (e.g. just deleted).
+  selected = new Set([...selected].filter((id) => items.some((it) => it.id === id)));
   const gal = $("gallery");
   gal.innerHTML = "";
   for (const [i, it] of items.entries()) {
     const fig = document.createElement("figure");
+    fig.dataset.id = it.id;
 
     const img = document.createElement("img");
     img.src = `/api/outputs/${it.filename}`;
     img.title = it.prompt;
     img.onclick = () => selectImage(i, true);
+
+    const pick = document.createElement("button");
+    pick.className = "pick";
+    pick.title = "Select for download (Shift+Click for a range)";
+    pick.onclick = (e) => {
+      e.stopPropagation();
+      pickAt(i, e.shiftKey);
+    };
 
     const edit = document.createElement("button");
     edit.className = "edit";
@@ -250,10 +272,11 @@ async function loadGallery() {
       removeImage(it.id, it.filename);
     };
 
-    fig.append(img, edit, del);
+    fig.append(img, pick, edit, del);
     gal.append(fig);
   }
   highlightSelected();
+  renderSelection();
 }
 
 // Open a gallery image by its index: apply its settings, show it in the
@@ -278,6 +301,109 @@ function highlightSelected() {
     const on = galleryItems[i] && galleryItems[i].id === selectedId;
     figs[i].classList.toggle("selected", on);
   }
+}
+
+// -- multi-select & downloads --------------------------------------------
+
+// Pick a thumbnail at `index`. A plain click toggles just that one; Shift+Click
+// adds the whole contiguous range between the last pick and this one (resolving
+// the anchor by id, so it survives reloads). Either way this becomes the new
+// anchor for the next Shift+Click.
+function pickAt(index, shiftKey) {
+  const it = galleryItems[index];
+  if (!it) return;
+  const anchor = lastPickId === null ? -1 : galleryItems.findIndex((x) => x.id === lastPickId);
+  if (shiftKey && anchor !== -1) {
+    const [a, b] = anchor < index ? [anchor, index] : [index, anchor];
+    for (let i = a; i <= b; i++) selected.add(galleryItems[i].id);
+  } else if (selected.has(it.id)) {
+    selected.delete(it.id);
+  } else {
+    selected.add(it.id);
+  }
+  lastPickId = it.id;
+  renderSelection();
+}
+
+function clearSelection() {
+  selected.clear();
+  lastPickId = null;
+  renderSelection();
+}
+
+// Reflect the current selection in the grid (checkmarks + outlines) and the
+// gallery toolbar (count + show/hide). Reads ids off each figure's dataset so
+// it works without rebuilding the DOM.
+function renderSelection() {
+  for (const fig of $("gallery").children) {
+    const on = selected.has(fig.dataset.id);
+    fig.classList.toggle("checked", on);
+    const pick = fig.querySelector(".pick");
+    if (pick) pick.textContent = on ? "✓" : "";
+  }
+  const n = selected.size;
+  $("gallery-actions").hidden = n === 0;
+  $("sel-count").textContent = n ? `${n} selected` : "";
+}
+
+// Open the browser's "choose location" dialog when supported (Chromium over
+// localhost), returning a file handle. null = the user cancelled (caller should
+// abort); undefined = unsupported (caller falls back to a normal download).
+async function pickSaveHandle(suggestedName) {
+  if (!window.showSaveFilePicker) return undefined;
+  try {
+    return await window.showSaveFilePicker({ suggestedName });
+  } catch (e) {
+    return e.name === "AbortError" ? null : undefined;
+  }
+}
+
+// Write a blob to the chosen handle, or fall back to a normal browser download
+// (to the default location) when no handle was obtained.
+async function writeBlob(handle, blob, suggestedName) {
+  if (handle) {
+    const w = await handle.createWritable();
+    await w.write(blob);
+    await w.close();
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = suggestedName;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// Save the image currently shown in the preview to a location of your choice.
+async function downloadCurrent() {
+  if (!currentPreview) return;
+  // Open the picker BEFORE fetching so the click's user-gesture isn't lost.
+  const handle = await pickSaveHandle(currentPreview);
+  if (handle === null) return;
+  const blob = await (await fetch(`/api/outputs/${encodeURIComponent(currentPreview)}`)).blob();
+  await writeBlob(handle, blob, currentPreview);
+}
+
+// Zip every ticked image (server-side) and save the bundle in one go.
+async function downloadSelected() {
+  const filenames = galleryItems.filter((it) => selected.has(it.id)).map((it) => it.filename);
+  if (!filenames.length) return;
+  const name = "imagen-images.zip";
+  const handle = await pickSaveHandle(name);
+  if (handle === null) return;
+  const res = await fetch("/api/download", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ filenames }),
+  });
+  if (!res.ok) {
+    $("status").textContent = "Download failed.";
+    return;
+  }
+  await writeBlob(handle, await res.blob(), name);
 }
 
 // How many columns the responsive grid is currently showing: count the figures
@@ -358,6 +484,9 @@ document.addEventListener("keydown", (e) => {
 
 $("go").addEventListener("click", generate);
 $("clear-init").addEventListener("click", clearInitImage);
+$("download-current").addEventListener("click", downloadCurrent);
+$("download-selected").addEventListener("click", downloadSelected);
+$("clear-selection").addEventListener("click", clearSelection);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
 });

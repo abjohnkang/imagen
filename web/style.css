@@ -137,6 +137,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 #bar { height: 100%; width: 0; background: var(--accent); transition: width 0.15s; }
 
 .preview {
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -147,7 +148,30 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 #preview { max-width: 100%; max-height: 70vh; border-radius: 6px; display: none; }
 
-.gallery-title { padding: 0 24px; }
+.overlay-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.overlay-btn[hidden] { display: none; }
+
+.gallery-head {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 24px;
+}
+.gallery-title { padding: 0; }
+.gallery-actions { display: flex; align-items: center; gap: 8px; }
+.gallery-actions[hidden] { display: none; }
+.sel-count { color: var(--muted); font-size: 12px; }
 .gallery {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
@@ -167,3 +191,16 @@ button:disabled { opacity: 0.5; cursor: default; }
 .gallery .edit { right: 32px; }
 .gallery figure:hover .del,
 .gallery figure:hover .edit { opacity: 1; }
+
+.gallery .pick {
+  position: absolute; top: 6px; left: 6px;
+  width: 22px; height: 22px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0, 0, 0, 0.6); color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 4px; font-size: 13px; line-height: 1; cursor: pointer;
+  opacity: 0; transition: opacity 0.1s;
+}
+.gallery figure:hover .pick { opacity: 1; }
+.gallery figure.checked .pick { opacity: 1; background: var(--accent); border-color: var(--accent); }
+.gallery figure.checked img { outline: 3px solid var(--accent); outline-offset: -3px; }

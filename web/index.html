@@ -55,10 +55,18 @@
 
     <section class="preview">
       <img id="preview" alt="" />
+      <button id="download-current" class="overlay-btn" hidden>⤓ Save image</button>
     </section>
   </main>
 
-  <h2 class="gallery-title">Gallery</h2>
+  <div class="gallery-head">
+    <h2 class="gallery-title">Gallery</h2>
+    <div id="gallery-actions" class="gallery-actions" hidden>
+      <span id="sel-count" class="sel-count"></span>
+      <button id="download-selected" class="ghost">⤓ Download selected</button>
+      <button id="clear-selection" class="ghost">Clear</button>
+    </div>
+  </div>
   <div id="gallery" class="gallery"></div>
 
   <script src="/app.js"></script>
