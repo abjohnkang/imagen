@@ -449,6 +449,9 @@ function renderSelection() {
   // "0 selected" rather than disappearing until something is ticked.
   const n = selected.size;
   $("sel-count").textContent = `${n} selected`;
+  // Grey out the actions that need a selection when nothing is ticked.
+  $("download-selected").disabled = n === 0;
+  $("delete-selected").disabled = n === 0;
 
   // "Select all" is offered whenever the page has photos; it flips to "Select
   // none" once every photo on the page is already ticked. The whole controls row
