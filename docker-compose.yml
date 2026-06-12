@@ -1,0 +1,19 @@
+services:
+  imagen:
+    build: .
+    image: imagen:local
+    # Bind to localhost only — the server isn't exposed to the local network.
+    ports:
+      - "127.0.0.1:${IMAGEN_PORT:-7860}:7860"
+    environment:
+      IMAGEN_HOME: /data
+      IMAGEN_HOST: 0.0.0.0
+      IMAGEN_PORT: "7860"
+    # Named volume keeps models/outputs/db off the host filesystem. Wipe
+    # everything (including downloaded models) with: docker compose down -v
+    volumes:
+      - imagen-data:/data
+    restart: unless-stopped
+
+volumes:
+  imagen-data:

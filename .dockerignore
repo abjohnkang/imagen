@@ -1,0 +1,17 @@
+# Keep the build context small and host artifacts out of the image.
+.venv/
+venv/
+__pycache__/
+*.pyc
+outputs/
+models/
+*.db
+imagen_home/
+data/
+.git/
+.gitignore
+README.md
+CONCEPT.md
+LICENSE
+run.sh
+validate_flux.py
