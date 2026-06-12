@@ -444,9 +444,11 @@ function renderSelection() {
     const pick = fig.querySelector(".pick");
     if (pick) pick.textContent = on ? "✓" : "";
   }
+  // The selection toolbar stays visible whenever the page has photos (the
+  // parent #gallery-controls hides it on an empty page), so the count reads
+  // "0 selected" rather than disappearing until something is ticked.
   const n = selected.size;
-  $("gallery-actions").hidden = n === 0;
-  $("sel-count").textContent = n ? `${n} selected` : "";
+  $("sel-count").textContent = `${n} selected`;
 
   // "Select all" is offered whenever the page has photos; it flips to "Select
   // none" once every photo on the page is already ticked. The whole controls row
