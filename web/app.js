@@ -394,6 +394,19 @@ function clearSelection() {
   renderSelection();
 }
 
+// Tick (or untick) every photo on the current page. Acts on this page only —
+// selections on other pages are left untouched — so it pairs with "Clear",
+// which drops the whole cross-page selection. Toggles based on whether the page
+// is already fully selected.
+function toggleSelectAllPage() {
+  const allOn = galleryItems.length > 0 && galleryItems.every((it) => selected.has(it.id));
+  for (const it of galleryItems) {
+    if (allOn) selected.delete(it.id);
+    else selected.set(it.id, it);
+  }
+  renderSelection();
+}
+
 // Delete every ticked photo at once (across all pages), after a confirmation
 // (these can't be undone). Unknown/already-gone ids are ignored server-side.
 async function deleteSelected() {
@@ -434,6 +447,15 @@ function renderSelection() {
   const n = selected.size;
   $("gallery-actions").hidden = n === 0;
   $("sel-count").textContent = n ? `${n} selected` : "";
+
+  // "Select all" is offered whenever the page has photos; it flips to "Select
+  // none" once every photo on the page is already ticked. The whole controls row
+  // is hidden on an empty page so it leaves no gap under the heading.
+  const btn = $("select-all");
+  const allOn = galleryItems.length > 0 && galleryItems.every((it) => selected.has(it.id));
+  btn.hidden = galleryItems.length === 0;
+  btn.textContent = allOn ? "Select none" : "Select all";
+  $("gallery-controls").hidden = galleryItems.length === 0;
 }
 
 // Open the browser's "choose location" dialog when supported (Chromium over
@@ -643,6 +665,7 @@ $("download-current").addEventListener("click", downloadCurrent);
 $("download-selected").addEventListener("click", downloadSelected);
 $("delete-selected").addEventListener("click", deleteSelected);
 $("clear-selection").addEventListener("click", clearSelection);
+$("select-all").addEventListener("click", toggleSelectAllPage);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
 });

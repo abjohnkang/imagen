@@ -162,13 +162,20 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .overlay-btn[hidden] { display: none; }
 
+/* Title on top, the controls (Select all + selection toolbar) on the line
+   beneath it — both left-aligned under the heading. The vertical padding gives
+   space above the heading and below the controls (before the photos); the small
+   gap keeps the controls tucked just under "Gallery", not floating near the grid. */
 .gallery-head {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 0 24px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 8px 24px 16px;
 }
-.gallery-title { padding: 0; }
+.gallery-title { margin: 0; padding: 0; }
+.gallery-controls { display: flex; align-items: center; gap: 8px; }
+.gallery-controls[hidden] { display: none; }
 .gallery-actions { display: flex; align-items: center; gap: 8px; }
 .gallery-actions[hidden] { display: none; }
 .sel-count { color: var(--muted); font-size: 12px; }
