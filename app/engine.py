@@ -134,7 +134,7 @@ class Engine:
         seed = params.seed
         if seed is None or seed < 0:
             seed = int.from_bytes(os.urandom(4), "big")
-        # CPU generator is the reproducible choice on MPS.
+        # Seed a CPU generator so the noise (and thus the image) is reproducible.
         generator = torch.Generator("cpu").manual_seed(seed)
 
         call_kwargs = dict(
