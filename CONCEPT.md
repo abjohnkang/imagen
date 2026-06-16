@@ -13,22 +13,35 @@ You own the model weights and the box they run on.
 
 ## Hardware target
 
-This box: **Apple M3 / 16 GB unified memory.**
+This box is an **Apple M3 / 16 GB unified memory**, but the app ships in
+**Docker**, and Docker on macOS has **no GPU passthrough** — no Metal (MPS), no
+CUDA. So inference runs **CPU-only**, and that's the constraint that drives the
+choices below:
 
-That's the primary constraint and it drives every choice below:
-
-- No CUDA. Inference runs on Apple's **Metal (MPS)** backend.
-- 16 GB unified memory is shared between the OS, the app, and the model. Budget ~10–12 GB for generation.
-- This comfortably runs **SD 1.5** and **SDXL** (with attention slicing / VAE tiling). **Flux** and large video models are tight-to-impractical at 16 GB and are out of scope for v1.
+- **CPU-bound.** Generation runs on the container's CPU cores. It works, but
+  it's slow — minutes per image for SD 1.5, considerably more for the
+  SDXL-class models. The M3 GPU sits idle; using it would mean running natively
+  outside Docker, which is out of scope.
+- **The memory ceiling is the Docker VM, not the host.** Docker Desktop hands
+  the Linux VM a slice of the 16 GB (≈8 GB by default). SD 1.5 (~4 GB fp32) fits
+  comfortably; the SDXL-class pipelines (~14 GB fp32) exceed it and lean on the
+  VM's swap, so they still run, just slower. Raising Docker's memory allocation
+  helps the big models.
+- This runs **SD 1.5**, **SDXL**, **RealVisXL**, and **SDXL Turbo** (with
+  attention slicing / VAE tiling always on). **Flux** and large video models are
+  out of scope for v1.
 
 ## Model strategy
 
-| Model | VRAM-ish footprint | Fit on M3/16GB | Notes |
-|-------|-------------------|----------------|-------|
-| **SD 1.5** | ~4 GB | Excellent | Fast, huge ecosystem of fine-tunes/LoRAs, 512×512 native |
-| **SDXL** | ~8–10 GB | Good (with slicing) | Higher quality, 1024×1024 native, slower; base model is "raw" |
-| **RealVisXL 4.0** | ~8–10 GB | Good (with slicing) | SDXL photoreal fine-tune; cleaner anatomy + prompt adherence than base |
-| **SDXL Turbo / LCM** | ~8 GB | Good | Few-step (1–4) generation, near-realtime previews |
+Everything runs in **fp32** (CPU has no use for half precision), so footprints
+below are the fp32 resident weights.
+
+| Model | fp32 footprint | On CPU (Docker) | Notes |
+|-------|----------------|-----------------|-------|
+| **SD 1.5** | ~4 GB | Fits the default ~8 GB VM; fastest | Huge ecosystem of fine-tunes/LoRAs, 512×512 native |
+| **SDXL** | ~14 GB | Runs (swaps past the ~8 GB VM), slow | Higher quality, 1024×1024 native; base model is "raw" |
+| **RealVisXL 4.0** | ~14 GB | Runs (swaps), slow | SDXL photoreal fine-tune; cleaner anatomy + prompt adherence than base |
+| **SDXL Turbo** | ~14 GB | Runs; few steps make it the quickest SDXL-class | 1–4 step generation, 512 native |
 | Flux.1 | 12–24 GB | Out of scope v1 | Revisit with quantized GGUF later |
 
 Models are downloaded once from Hugging Face into a local cache and run offline
@@ -50,14 +63,14 @@ and appear in the UI.
 └───────────────────────┬───────────────────────┘
                         │  in-process calls
 ┌───────────────────────▼───────────────────────┐
-│  Inference engine  (diffusers + PyTorch/MPS)     │
+│  Inference engine  (diffusers + PyTorch, CPU)    │
 │  · pipeline cache   · scheduler/sampler          │
 │  · attention slicing · VAE tiling                │
 └───────────────────────┬───────────────────────┘
                         │
 ┌───────────────────────▼───────────────────────┐
-│  Local storage                                   │
-│  ~/imagen/models  ~/imagen/outputs  imagen.db    │
+│  Local storage  (Docker volume, mounted at /data)│
+│  /data/models  /data/outputs  /data/imagen.db    │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -68,17 +81,17 @@ and appear in the UI.
    progress over WebSocket, a gallery of past generations, click-to-reuse settings.
 
 2. **Backend API** (FastAPI) — REST endpoints + a WebSocket for progress. Owns a
-   **single-worker job queue** (one generation at a time; 16 GB can't parallelize
-   diffusion safely). Endpoints:
+   **single-worker job queue** (one generation at a time; CPU diffusion can't be
+   parallelized usefully). Endpoints:
    - `POST /api/generate` — enqueue a job, returns a job id
    - `GET  /api/jobs/{id}` — status / result
    - `WS   /api/progress`  — step-by-step progress + preview latents
    - `GET  /api/models` · `POST /api/models/load`
    - `GET  /api/gallery` — paginated history from SQLite
 
-3. **Inference engine** — Hugging Face `diffusers` on the `mps` device.
-   Attention slicing on, VAE tiling for SDXL. Pipelines are loaded lazily and
-   cached; switching models evicts the previous one to respect the memory budget.
+3. **Inference engine** — Hugging Face `diffusers` running on CPU. Attention
+   slicing on, VAE tiling for SDXL. Pipelines are loaded lazily and cached;
+   switching models evicts the previous one so only one stays resident.
 
 4. **Storage** — PNG outputs with full generation metadata embedded in the file's
    text chunks, plus a SQLite row per image for fast gallery queries. Models live
@@ -87,16 +100,16 @@ and appear in the UI.
 ## Tech stack (proposed)
 
 - **Backend:** Python 3.11+, FastAPI, Uvicorn
-- **Inference:** PyTorch (MPS), Hugging Face `diffusers`, `transformers`, `accelerate`
+- **Inference:** PyTorch (CPU build), Hugging Face `diffusers`, `transformers`, `accelerate`
 - **DB:** SQLite (via SQLModel or plain `sqlite3`)
 - **Frontend:** Vanilla + a light framework — start with plain HTML/JS + HTMX, or React/Vite if the UI grows
-- **Packaging:** a `run.sh` / Makefile that sets up a venv, installs deps, downloads a default model, and launches the server
+- **Packaging:** Docker + docker-compose — the whole stack (Python, CPU PyTorch, diffusers, model cache) runs in a container; `run.sh` builds and launches it
 
 > Alternative if you'd rather not build inference from scratch: stand the UI/queue
-> in front of **ComfyUI** or **Automatic1111** (both run on M-series via MPS).
-> Building our own thin `diffusers` engine keeps the stack small and fully ours;
-> wrapping ComfyUI gets a battle-tested backend faster. **Recommendation for v1:
-> thin `diffusers` engine** — fewer moving parts, easier to tailor to 16 GB.
+> in front of **ComfyUI** or **Automatic1111**. Building our own thin `diffusers`
+> engine keeps the stack small and fully ours; wrapping ComfyUI gets a
+> battle-tested backend faster. **Recommendation for v1: thin `diffusers` engine**
+> — fewer moving parts.
 
 ## Feature roadmap
 
@@ -122,7 +135,8 @@ and appear in the UI.
 - Cloud deployment or multi-user auth
 - Training / fine-tuning models (inference only)
 - Video generation
-- Running models that don't fit comfortably in 16 GB
+- Running models too heavy to be practical on CPU (e.g. Flux)
+- GPU acceleration (Docker on macOS can't reach the Metal GPU)
 
 ## Open questions
 
