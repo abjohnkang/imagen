@@ -1,7 +1,9 @@
-"""Diffusers inference engine for Apple Silicon (MPS).
+"""Diffusers inference engine (CPU).
 
-Pipelines are loaded lazily and cached. Switching models evicts the previous
-pipeline to respect the 16 GB unified-memory budget.
+Inference always runs on CPU: this app ships in Docker, and Docker on macOS has
+no GPU passthrough (no Metal, no CUDA). Pipelines are loaded lazily and cached;
+switching models evicts the previous pipeline so only one model's weights are
+resident at a time.
 
 Heavy imports (torch/diffusers) are done lazily so the web server can boot even
 before the ML dependencies finish installing.
@@ -33,12 +35,7 @@ class Engine:
             import torch
 
             self._torch = torch
-            if torch.backends.mps.is_available():
-                self._device = "mps"
-            elif torch.cuda.is_available():
-                self._device = "cuda"
-            else:
-                self._device = "cpu"
+            self._device = "cpu"
         return self._torch
 
     @property
@@ -61,21 +58,12 @@ class Engine:
             # The img2img pipe shared the evicted weights — drop it too.
             self._i2i_pipe = None
             self._i2i_model = None
-            if self._device == "mps":
-                torch.mps.empty_cache()
-            elif self._device == "cuda":
-                torch.cuda.empty_cache()
 
         mcfg = config.model_config(model)
 
-        # Precision. CUDA is always fp16. On MPS, fp16 produces black images
-        # (NaNs in the unet) on this torch build, so models run in fp32. Larger
-        # fp32 pipelines (SDXL) use cpu-offload below to fit the memory budget.
-        dtype = torch.float16 if self._device == "cuda" else torch.float32
-        if self._device != "cuda" and mcfg.get("dtype") == "float16":
-            dtype = torch.float16  # explicit opt-in (e.g. when fp16 is known-good)
-
-        kwargs = {"torch_dtype": dtype}
+        # Always fp32 on CPU: half precision has no speed benefit here and some
+        # CPU kernels don't implement it.
+        kwargs = {"torch_dtype": torch.float32}
         # safety_checker is an SD1.x-only pipeline arg; SDXL doesn't accept it.
         if config.DISABLE_SAFETY_CHECKER and mcfg.get("sd_safety_checker"):
             kwargs["safety_checker"] = None
@@ -96,16 +84,12 @@ class Engine:
                 algorithm_type="dpmsolver++",
             )
 
-        # Keep memory in check on 16 GB unified memory.
+        # Trim peak memory — matters most for the big SDXL-class pipelines.
         pipe.enable_attention_slicing()
         if hasattr(pipe, "enable_vae_tiling"):
             pipe.enable_vae_tiling()
 
-        if mcfg.get("offload") and self._device != "cpu":
-            # Stream components on/off the GPU so a big fp32 pipeline fits 16 GB.
-            pipe.enable_model_cpu_offload(device=self._device)
-        else:
-            pipe = pipe.to(self._device)
+        pipe = pipe.to("cpu")
 
         self._pipe = pipe
         self._loaded_model = model
@@ -119,8 +103,8 @@ class Engine:
 
         from diffusers import AutoPipelineForImage2Image
 
-        # from_pipe shares the base pipeline's components (and its cpu-offload
-        # hooks), so no weights are reloaded and the memory budget is unchanged.
+        # from_pipe shares the base pipeline's components, so no weights are
+        # reloaded and the memory footprint is unchanged.
         i2i = AutoPipelineForImage2Image.from_pipe(base)
         i2i.enable_attention_slicing()
         if hasattr(i2i, "enable_vae_tiling"):
