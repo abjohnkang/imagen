@@ -6,9 +6,9 @@ diffusers, and the downloaded model weights) lives inside Docker, so nothing is
 installed on the host.
 
 > **Speed note:** Docker on macOS has no access to the Mac's Metal GPU, so
-> generation runs **CPU-only and is slow** — expect minutes per image, more for
-> SDXL. The engine itself is tuned for 16 GB Apple-Silicon unified memory and
-> auto-detects MPS/CUDA when run natively; only the Docker delivery is CPU-bound.
+> generation runs **CPU-only and is slow** — expect minutes per image for SD 1.5
+> and considerably more for the SDXL-class models (SDXL, RealVisXL). SDXL Turbo
+> (4 steps) is the quickest option.
 
 ## Quick start
 
@@ -45,8 +45,8 @@ compute device (`device: cpu` under Docker).
 **The basic loop:** pick a model → type a prompt → click **Generate**. The job is
 queued, a progress bar fills as it runs, and the result appears in the preview
 and is added to the gallery. You can submit several prompts in a row — they line
-up in a small **queue** under the form and run one at a time (diffusion can't be
-parallelized safely in 16 GB). Each queued or running job has a **Cancel**
+up in a small **queue** under the form and run one at a time (CPU diffusion
+can't be parallelized usefully). Each queued or running job has a **Cancel**
 button; finished images drop off the list automatically.
 
 Everything else is optional tuning.
@@ -220,7 +220,7 @@ docker-compose.yml  service + named volume (imagen-data) wiring
 requirements.txt    Python dependencies
 app/
   main.py     FastAPI routes + WebSocket progress + serves the web UI
-  engine.py   diffusers inference; auto-selects MPS/CUDA/CPU (memory-tuned for 16 GB)
+  engine.py   diffusers inference; CPU-only, one model resident at a time
   jobs.py     single-worker generation queue with cancellation
   db.py       SQLite gallery index
   config.py   paths, model catalog, and env config
