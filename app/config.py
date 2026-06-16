@@ -24,15 +24,10 @@ ANATOMY_NEGATIVE = (
 )
 
 # Available models, shown in the UI switcher. Each entry carries the knobs the
-# engine needs to run it within the 16 GB unified-memory budget.
+# engine and UI need. Generation runs on CPU (Docker has no GPU access), so
+# everything runs in fp32; the only memory levers are attention slicing and VAE
+# tiling, which the engine always enables.
 #
-#   dtype          float16 | float32 — precision on MPS/CPU (CUDA always fp16).
-#                  Both fp16 and bf16 produce black images (NaN latents in the
-#                  unet) on this torch/MPS build, so models run fp32 here. That
-#                  makes generation ~5x slower than half precision would be;
-#                  revisit when MPS half-precision is fixed. CUDA gets fp16.
-#   offload        use accelerate model-cpu-offload to fit a large fp32 pipeline
-#                  in 16 GB (keeps idle components on CPU). Needed for SDXL.
 #   sd_safety_checker  this is an SD1.x pipeline that accepts safety_checker=None
 #   scheduler      override the pipeline's default sampler. "dpmpp_2m_karras"
 #                  (DPM++ 2M w/ Karras sigmas) gives sharper, more coherent
@@ -48,7 +43,6 @@ MODELS = [
     {
         "id": "stable-diffusion-v1-5/stable-diffusion-v1-5",
         "label": "SD 1.5",
-        "dtype": "float32",
         "sd_safety_checker": True,
         "scheduler": "dpmpp_2m_karras",
         "negative": ANATOMY_NEGATIVE,
@@ -59,8 +53,6 @@ MODELS = [
     {
         "id": "stabilityai/stable-diffusion-xl-base-1.0",
         "label": "SDXL 1.0",
-        "dtype": "float32",
-        "offload": True,
         "scheduler": "dpmpp_2m_karras",
         "negative": ANATOMY_NEGATIVE,
         "size": 1024,
@@ -70,11 +62,9 @@ MODELS = [
     {
         # Community fine-tune of SDXL tuned for photorealism with notably cleaner
         # hands and faces than base SDXL. Same architecture/footprint as base, so
-        # it loads through the same pipeline and offload path.
+        # it loads through the same pipeline.
         "id": "SG161222/RealVisXL_V4.0",
         "label": "RealVisXL 4.0 (photoreal)",
-        "dtype": "float32",
-        "offload": True,
         "scheduler": "dpmpp_2m_karras",
         "negative": ANATOMY_NEGATIVE,
         "size": 1024,
@@ -82,12 +72,10 @@ MODELS = [
         "cfg": 7.0,
     },
     {
-        # Distilled SDXL: 4 steps instead of 25. At 512 the fp32 pipeline fits
-        # 16 GB resident, so it runs WITHOUT offload (offload's one-time UNet
-        # transfer would dominate so few steps). ~6x faster than SDXL base here.
+        # Distilled SDXL: 4 steps instead of ~30, so it's by far the fastest
+        # model here. Runs at 512 with guidance disabled (cfg 0).
         "id": "stabilityai/sdxl-turbo",
         "label": "SDXL Turbo (fast)",
-        "dtype": "float32",
         "size": 512,
         "steps": 4,
         "cfg": 0.0,
@@ -99,14 +87,13 @@ DEFAULT_MODEL = os.environ.get("IMAGEN_MODEL", MODELS[0]["id"])
 
 
 def model_config(model_id: str) -> dict:
-    """Look up a model's engine settings; unknown ids fall back to SD-style fp32."""
+    """Look up a model's engine settings; unknown ids fall back to SD-style defaults."""
     for m in MODELS:
         if m["id"] == model_id:
             return m
     return {
         "id": model_id,
         "label": model_id,
-        "dtype": "float32",
         "size": 512,
         "steps": 30,
         "cfg": 7.5,
