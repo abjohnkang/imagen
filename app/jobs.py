@@ -1,8 +1,8 @@
 """Single-worker generation queue.
 
-Diffusion can't be safely parallelized on 16 GB, so exactly one job runs at a
-time. Jobs are kept in an in-memory dict; the WebSocket endpoint reads each
-job's live state to stream progress to the browser.
+CPU diffusion is heavy and can't be parallelized usefully, so exactly one job
+runs at a time. Jobs are kept in an in-memory dict; the WebSocket endpoint reads
+each job's live state to stream progress to the browser.
 """
 from __future__ import annotations
 
