@@ -84,6 +84,7 @@ function applyModelDefaults() {
   if (m.steps != null) $("steps").value = m.steps;
   if (m.cfg != null) $("cfg").value = m.cfg;
   if (m.negative != null) $("negative").value = m.negative;
+  renderAspect();
 }
 
 function readParams() {
@@ -146,6 +147,46 @@ function renderSeedLock() {
   btn.setAttribute("aria-pressed", String(seedLocked));
   btn.classList.toggle("on", seedLocked);
   $("seed").closest(".seed-field").classList.toggle("locked", seedLocked);
+}
+
+// Aspect-ratio presets. Sizes scale to the selected model's native resolution
+// (512 for SD 1.5 / Turbo, 1024 for SDXL-class), so 1:1 / Portrait / Landscape
+// always land on sensible dimensions for whichever model is loaded.
+function modelBaseSize() {
+  const m = MODELS.find((x) => x.id === $("model").value);
+  return (m && m.size) || 512;
+}
+
+function snap64(v) {
+  return Math.min(1536, Math.max(128, Math.round(v / 64) * 64));
+}
+
+// Dimensions for ratio w:h at the current model's base size: the long side is
+// the base, the short side scaled down and snapped to the 64-px step.
+function aspectDims(w, h) {
+  const base = modelBaseSize();
+  const short = snap64((base * Math.min(w, h)) / Math.max(w, h));
+  return [w >= h ? base : short, h >= w ? base : short];
+}
+
+function setAspect(w, h) {
+  const [W, H] = aspectDims(w, h);
+  $("width").value = W;
+  $("height").value = H;
+  renderAspect();
+}
+
+const ASPECTS = [["ar-square", 1, 1], ["ar-portrait", 3, 4], ["ar-landscape", 4, 3]];
+
+// Light up whichever preset matches the current size (none if width/height were
+// hand-edited off the preset grid).
+function renderAspect() {
+  const w = parseInt($("width").value, 10);
+  const h = parseInt($("height").value, 10);
+  for (const [id, aw, ah] of ASPECTS) {
+    const [W, H] = aspectDims(aw, ah);
+    $(id).classList.toggle("on", w === W && h === H);
+  }
 }
 
 // img2img: start the next generation from an existing image instead of noise.
@@ -708,6 +749,7 @@ function applySettings(it) {
     $("strength").value = it.strength;
     $("strength-val").textContent = parseFloat(it.strength).toFixed(2);
   }
+  renderAspect();
   showImage(it.filename);
 }
 
@@ -748,6 +790,11 @@ document.addEventListener("keydown", (e) => {
 $("go").addEventListener("click", generate);
 $("seed-random").addEventListener("click", randomizeSeed);
 $("seed-lock").addEventListener("click", toggleSeedLock);
+$("ar-square").addEventListener("click", () => setAspect(1, 1));
+$("ar-portrait").addEventListener("click", () => setAspect(3, 4));
+$("ar-landscape").addEventListener("click", () => setAspect(4, 3));
+$("width").addEventListener("input", renderAspect);
+$("height").addEventListener("input", renderAspect);
 $("clear-init").addEventListener("click", clearInitImage);
 $("download-current").addEventListener("click", downloadCurrent);
 $("download-selected").addEventListener("click", downloadSelected);
