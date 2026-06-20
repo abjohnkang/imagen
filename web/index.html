@@ -29,7 +29,13 @@
         <label>CFG <input id="cfg" type="number" value="7.5" step="0.5" min="0" max="30" /></label>
         <label>Width <input id="width" type="number" value="512" step="64" min="128" max="1536" /></label>
         <label>Height <input id="height" type="number" value="512" step="64" min="128" max="1536" /></label>
-        <label>Seed <input id="seed" type="number" value="-1" /></label>
+        <label class="seed-field">Seed
+          <span class="seed-row">
+            <input id="seed" type="number" value="-1" />
+            <button id="seed-random" type="button" class="ghost icon" title="New random seed">🎲</button>
+            <button id="seed-lock" type="button" class="ghost icon" title="Lock seed to reuse it" aria-pressed="false">🔓</button>
+          </span>
+        </label>
       </div>
 
       <div id="init-row" class="init-row" hidden>
