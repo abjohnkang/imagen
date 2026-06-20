@@ -30,6 +30,8 @@ const GALLERY_GAP = 12; // grid gap
 const GALLERY_PADDING = 24; // left/right padding
 let galleryPage = 0;
 let galleryTotal = 0;
+// When on, the gallery (and its page count) is filtered to favorited images.
+let favoritesOnly = false;
 
 // Filename currently shown in the big preview (for the "Save image" button).
 let currentPreview = null;
@@ -267,7 +269,12 @@ function watch(item) {
     if (job.status === "done") {
       // The finished image is now in the gallery; preview it and jump to page 1
       // (the newest page, where it lives), then drop this row from the queue.
+      // Clear the favorites filter so the new (unfavorited) image is visible.
       showImage(job.filename);
+      if (favoritesOnly) {
+        favoritesOnly = false;
+        renderFavFilter();
+      }
       loadGallery(0);
       queue = queue.filter((q) => q !== item);
       ws.close();
@@ -385,18 +392,27 @@ function galleryPageSize() {
 // can pass galleryPage±1 freely. A new generation passes 0 to jump back to the
 // newest page; deletes reload the current page (stepping back if it emptied).
 async function loadGallery(page = galleryPage) {
-  galleryTotal = (await (await fetch("/api/gallery/count")).json()).count;
+  const fav = `favorites=${favoritesOnly}`;
+  galleryTotal = (await (await fetch(`/api/gallery/count?${fav}`)).json()).count;
   const pageSize = galleryPageSize();
   const pages = Math.max(1, Math.ceil(galleryTotal / pageSize));
   galleryPage = Math.min(Math.max(0, page), pages - 1);
 
   const offset = galleryPage * pageSize;
-  const items = await (await fetch(`/api/gallery?limit=${pageSize}&offset=${offset}`)).json();
+  const items = await (
+    await fetch(`/api/gallery?limit=${pageSize}&offset=${offset}&${fav}`)
+  ).json();
   galleryItems = items;
 
   const gal = $("gallery");
   gal.innerHTML = "";
   for (const [i, it] of items.entries()) gal.append(galleryFigure(it, i));
+  if (!items.length && favoritesOnly) {
+    const p = document.createElement("p");
+    p.className = "gallery-empty";
+    p.textContent = "No favorites yet — tap ☆ on a photo to add one.";
+    gal.append(p);
+  }
   highlightSelected();
   renderSelection();
   renderPager(pages);
@@ -418,10 +434,24 @@ async function goToPage(page) {
   document.querySelector(".gallery-head").scrollIntoView({ behavior: "smooth" });
 }
 
+function renderFavFilter() {
+  const b = $("fav-filter");
+  b.classList.toggle("on", favoritesOnly);
+  b.textContent = favoritesOnly ? "★ Favorites" : "☆ Favorites";
+}
+
+// Toggle the favorites-only filter and reload from the newest page.
+function toggleFavoritesFilter() {
+  favoritesOnly = !favoritesOnly;
+  renderFavFilter();
+  loadGallery(0);
+}
+
 // Build one gallery thumbnail (figure) for the image at index `i` on the page.
 function galleryFigure(it, i) {
   const fig = document.createElement("figure");
   fig.dataset.id = it.id;
+  if (it.favorite) fig.classList.add("fav-on");
 
   const img = document.createElement("img");
   img.src = `/api/outputs/${it.filename}`;
@@ -459,8 +489,37 @@ function galleryFigure(it, i) {
     removeImage(it.id, it.filename);
   };
 
-  fig.append(img, pick, edit, del);
+  const fav = document.createElement("button");
+  fav.className = "fav";
+  fav.textContent = it.favorite ? "★" : "☆";
+  fav.title = it.favorite ? "Unfavorite" : "Favorite";
+  fav.onclick = (e) => {
+    e.stopPropagation();
+    toggleFavorite(it, fig);
+  };
+
+  fig.append(img, pick, edit, del, fav);
   return fig;
+}
+
+// Flag/unflag an image as a favorite. Updates the star in place; in the
+// favorites-only view, unfavoriting drops the image out so the page reloads.
+async function toggleFavorite(it, fig) {
+  const next = !it.favorite;
+  await fetch(`/api/gallery/${it.id}/favorite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ favorite: next }),
+  });
+  it.favorite = next;
+  if (favoritesOnly && !next) {
+    loadGallery();
+    return;
+  }
+  const btn = fig.querySelector(".fav");
+  btn.textContent = next ? "★" : "☆";
+  btn.title = next ? "Unfavorite" : "Favorite";
+  fig.classList.toggle("fav-on", next);
 }
 
 // Open a gallery image by its index: apply its settings, show it in the
@@ -801,6 +860,7 @@ $("download-selected").addEventListener("click", downloadSelected);
 $("delete-selected").addEventListener("click", deleteSelected);
 $("clear-selection").addEventListener("click", clearSelection);
 $("select-all").addEventListener("click", toggleSelectAllPage);
+$("fav-filter").addEventListener("click", toggleFavoritesFilter);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
 });
