@@ -55,6 +55,25 @@ textarea, input, select {
 }
 .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 
+/* Seed field: the number input plus its 🎲 randomize and 🔒 lock buttons on one
+   row. The icon buttons stretch to the input's height and sit flush beside it. */
+.seed-row { display: flex; align-items: stretch; gap: 4px; }
+.seed-row input { flex: 1; min-width: 0; }
+.seed-row .icon {
+  flex: none;
+  align-self: stretch;
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Locked: light up the lock button and accent the input's border so it's
+   obvious the seed is pinned and every run will reuse it. */
+.seed-row .icon.on { color: var(--text); border-color: var(--accent); background: rgba(109, 109, 255, 0.15); }
+.seed-field.locked input { border-color: var(--accent); }
+
 button {
   background: var(--accent);
   color: white;
