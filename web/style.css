@@ -74,6 +74,12 @@ textarea, input, select {
 .seed-row .icon.on { color: var(--text); border-color: var(--accent); background: rgba(109, 109, 255, 0.15); }
 .seed-field.locked input { border-color: var(--accent); }
 
+/* Aspect-ratio presets: three equal-width buttons that set width/height. The
+   one matching the current size lights up (.on). */
+.aspect { display: flex; gap: 6px; }
+.aspect .ghost { flex: 1; text-align: center; align-self: auto; }
+.ghost.on { color: var(--text); border-color: var(--accent); background: rgba(109, 109, 255, 0.15); }
+
 button {
   background: var(--accent);
   color: white;
