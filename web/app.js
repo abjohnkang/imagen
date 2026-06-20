@@ -5,6 +5,14 @@ const fields = ["prompt", "negative", "steps", "cfg", "width", "height", "seed"]
 let MODELS = [];
 let initImage = null; // filename of the img2img starting image, or null
 
+// Seed lock. Unlocked (default): every Generate rerolls a fresh random seed and
+// writes it into the field, so the field always shows the seed that made the
+// current image. Locked: that exact seed is reused on every run, so you can
+// change the prompt and keep the composition. The -1 in the field is the
+// "random" sentinel; locking materializes a concrete seed (see toggleSeedLock)
+// so you can never be locked-but-random.
+let seedLocked = false;
+
 // The gallery as last loaded (newest first), plus which image is "open" in the
 // preview. Tracked by id rather than index so the selection survives the
 // reloads that happen after every generation (which renumber the grid).
@@ -91,6 +99,53 @@ function readParams() {
   };
 }
 
+// A fresh random seed in 0 .. 2^32-1, matching the server's os.urandom(4) range
+// so client- and server-side seeds are interchangeable.
+function randomSeed() {
+  return Math.floor(Math.random() * 0x100000000);
+}
+
+// Resolve the seed for the next generation, updating the field to match. Locked
+// with a valid seed → reuse it; otherwise reroll and show the new value.
+function nextSeed() {
+  const v = parseInt($("seed").value, 10);
+  if (seedLocked && Number.isInteger(v) && v >= 0) return v;
+  const s = randomSeed();
+  $("seed").value = s;
+  return s;
+}
+
+// Drop a fresh random seed into the field. A one-shot — it doesn't change the
+// lock, so you can grab a specific random value and then lock it.
+function randomizeSeed() {
+  $("seed").value = randomSeed();
+}
+
+// Toggle the seed lock. Locking a -1/blank field materializes a concrete random
+// seed right away, so "locked" always means an exact, reproducible number and
+// never locked-but-random. Unlocking drops back to -1 (random each run).
+function toggleSeedLock() {
+  seedLocked = !seedLocked;
+  if (seedLocked) {
+    const v = parseInt($("seed").value, 10);
+    if (!Number.isInteger(v) || v < 0) $("seed").value = randomSeed();
+  } else {
+    $("seed").value = -1;
+  }
+  renderSeedLock();
+}
+
+// Reflect the lock state on the button (glyph, title, pressed) and accent the
+// field so it's obvious the seed is pinned.
+function renderSeedLock() {
+  const btn = $("seed-lock");
+  btn.textContent = seedLocked ? "🔒" : "🔓";
+  btn.title = seedLocked ? "Seed locked — click to randomize each run" : "Lock seed to reuse it";
+  btn.setAttribute("aria-pressed", String(seedLocked));
+  btn.classList.toggle("on", seedLocked);
+  $("seed").closest(".seed-field").classList.toggle("locked", seedLocked);
+}
+
 // img2img: start the next generation from an existing image instead of noise.
 function setInitImage(filename) {
   initImage = filename;
@@ -104,11 +159,12 @@ function clearInitImage() {
 }
 
 async function generate() {
-  const params = readParams();
-  if (!params.prompt.trim()) {
+  if (!$("prompt").value.trim()) {
     $("status").textContent = "Enter a prompt first.";
     return;
   }
+  nextSeed(); // resolve & display the seed before reading the form
+  const params = readParams();
 
   const res = await fetch("/api/generate", {
     method: "POST",
@@ -665,6 +721,8 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("go").addEventListener("click", generate);
+$("seed-random").addEventListener("click", randomizeSeed);
+$("seed-lock").addEventListener("click", toggleSeedLock);
 $("clear-init").addEventListener("click", clearInitImage);
 $("download-current").addEventListener("click", downloadCurrent);
 $("download-selected").addEventListener("click", downloadSelected);
