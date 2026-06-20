@@ -50,6 +50,8 @@ def init() -> None:
         _conn.execute("ALTER TABLE images ADD COLUMN init_image TEXT")
     if "strength" not in cols:
         _conn.execute("ALTER TABLE images ADD COLUMN strength REAL")
+    if "favorite" not in cols:
+        _conn.execute("ALTER TABLE images ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0")
     _conn.commit()
 
 
@@ -69,20 +71,37 @@ def insert(row: dict[str, Any]) -> None:
         _conn.commit()
 
 
-def count() -> int:
+def count(favorites_only: bool = False) -> int:
     """Total number of images in the gallery (for pagination)."""
     with _lock:
-        cur = _conn.execute("SELECT COUNT(*) AS n FROM images")
+        sql = "SELECT COUNT(*) AS n FROM images"
+        if favorites_only:
+            sql += " WHERE favorite = 1"
+        cur = _conn.execute(sql)
         return cur.fetchone()["n"]
 
 
-def list_images(limit: int = 60, offset: int = 0) -> list[dict[str, Any]]:
+def list_images(
+    limit: int = 60, offset: int = 0, favorites_only: bool = False
+) -> list[dict[str, Any]]:
+    with _lock:
+        sql = "SELECT * FROM images"
+        if favorites_only:
+            sql += " WHERE favorite = 1"
+        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        cur = _conn.execute(sql, (limit, offset))
+        return [dict(r) for r in cur.fetchall()]
+
+
+def set_favorite(image_id: str, value: bool) -> bool:
+    """Flag/unflag an image as a favorite. Returns False if the id is unknown."""
     with _lock:
         cur = _conn.execute(
-            "SELECT * FROM images ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            "UPDATE images SET favorite = ? WHERE id = ?",
+            (1 if value else 0, image_id),
         )
-        return [dict(r) for r in cur.fetchall()]
+        _conn.commit()
+        return cur.rowcount > 0
 
 
 def peek(image_id: str) -> str | None:
