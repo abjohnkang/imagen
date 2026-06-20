@@ -46,7 +46,9 @@ let lastPickId = null;
 // to the server right away — the server runs them one at a time, FIFO — and
 // gets a row here so you can line up several without waiting. Finished and
 // cancelled jobs drop off automatically; failed ones stay until you dismiss them.
-//   { jobId, label, status, step, total, seed, filename, error, cancelling }
+//   { jobId, label, status, step, total, seed, filename, error, cancelling,
+//     startedAt }  (startedAt: ms timestamp of the first "running" tick, used
+//     for the elapsed/ETA readout)
 let queue = [];
 
 async function init() {
@@ -216,6 +218,10 @@ function watch(item) {
       filename: job.filename,
       error: job.error,
     });
+    // Stamp when the job actually starts running, so renderQueue can show the
+    // elapsed time and an ETA. The server streams state every 0.2s, so this
+    // (and the readout it drives) stays current without a separate timer.
+    if (item.status === "running" && !item.startedAt) item.startedAt = Date.now();
 
     if (job.status === "done") {
       // The finished image is now in the gallery; preview it and jump to page 1
@@ -241,6 +247,13 @@ function watch(item) {
   };
 }
 
+// Format a duration in seconds as "45s" or "1m05s".
+function fmtTime(s) {
+  s = Math.max(0, Math.round(s));
+  if (s < 60) return `${s}s`;
+  return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+}
+
 // Rebuild the queue list and drive the headline status/progress bar from
 // whichever job is currently running.
 function renderQueue() {
@@ -252,8 +265,20 @@ function renderQueue() {
   const waiting = queue.filter((q) => q.status === "queued").length;
   if (running) {
     const pct = running.total ? Math.round((running.step / running.total) * 100) : 0;
-    $("status").textContent =
-      `Generating… ${running.step}/${running.total}` + (waiting ? ` · ${waiting} queued` : "");
+    let line = `Generating… ${running.step}/${running.total}`;
+    if (running.startedAt) {
+      const elapsed = (Date.now() - running.startedAt) / 1000;
+      line += ` · ${fmtTime(elapsed)} elapsed`;
+      // ETA from the average time per completed step. Needs at least one step
+      // done, and there's nothing left to estimate on the last one. Early steps
+      // include model-load time, so the estimate starts high and settles.
+      if (running.step > 0 && running.step < running.total) {
+        const remaining = (elapsed / running.step) * (running.total - running.step);
+        line += ` · ~${fmtTime(remaining)} left`;
+      }
+    }
+    if (waiting) line += ` · ${waiting} queued`;
+    $("status").textContent = line;
     $("bar").style.width = pct + "%";
   } else if (waiting) {
     $("status").textContent = `${waiting} queued…`;
