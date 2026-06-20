@@ -77,14 +77,21 @@ async def progress(ws: WebSocket, job_id: str) -> None:
 
 
 @app.get("/api/gallery")
-def gallery(limit: int = 60, offset: int = 0) -> list[dict]:
-    return db.list_images(limit=limit, offset=offset)
+def gallery(limit: int = 60, offset: int = 0, favorites: bool = False) -> list[dict]:
+    return db.list_images(limit=limit, offset=offset, favorites_only=favorites)
 
 
 @app.get("/api/gallery/count")
-def gallery_count() -> dict:
+def gallery_count(favorites: bool = False) -> dict:
     """Total image count, so the UI can compute how many pages there are."""
-    return {"count": db.count()}
+    return {"count": db.count(favorites_only=favorites)}
+
+
+@app.post("/api/gallery/{image_id}/favorite")
+def set_favorite(image_id: str, favorite: bool = Body(..., embed=True)) -> dict:
+    if not db.set_favorite(image_id, favorite):
+        raise HTTPException(404, "image not found")
+    return {"id": image_id, "favorite": favorite}
 
 
 def _delete_image(image_id: str) -> bool:
