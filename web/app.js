@@ -32,6 +32,8 @@ let galleryPage = 0;
 let galleryTotal = 0;
 // When on, the gallery (and its page count) is filtered to favorited images.
 let favoritesOnly = false;
+// Substring filter on the prompt; empty means no search. Both filters compose.
+let gallerySearch = "";
 
 // Filename currently shown in the big preview (for the "Save image" button).
 let currentPreview = null;
@@ -269,11 +271,16 @@ function watch(item) {
     if (job.status === "done") {
       // The finished image is now in the gallery; preview it and jump to page 1
       // (the newest page, where it lives), then drop this row from the queue.
-      // Clear the favorites filter so the new (unfavorited) image is visible.
+      // Clear the active filters so the new image is visible (it won't be
+      // favorited yet, and likely won't match an in-progress search).
       showImage(job.filename);
       if (favoritesOnly) {
         favoritesOnly = false;
         renderFavFilter();
+      }
+      if (gallerySearch) {
+        gallerySearch = "";
+        $("gallery-search").value = "";
       }
       loadGallery(0);
       queue = queue.filter((q) => q !== item);
@@ -392,25 +399,27 @@ function galleryPageSize() {
 // can pass galleryPage±1 freely. A new generation passes 0 to jump back to the
 // newest page; deletes reload the current page (stepping back if it emptied).
 async function loadGallery(page = galleryPage) {
-  const fav = `favorites=${favoritesOnly}`;
-  galleryTotal = (await (await fetch(`/api/gallery/count?${fav}`)).json()).count;
+  const filters = new URLSearchParams({ favorites: favoritesOnly, query: gallerySearch });
+  galleryTotal = (await (await fetch(`/api/gallery/count?${filters}`)).json()).count;
   const pageSize = galleryPageSize();
   const pages = Math.max(1, Math.ceil(galleryTotal / pageSize));
   galleryPage = Math.min(Math.max(0, page), pages - 1);
 
   const offset = galleryPage * pageSize;
   const items = await (
-    await fetch(`/api/gallery?limit=${pageSize}&offset=${offset}&${fav}`)
+    await fetch(`/api/gallery?limit=${pageSize}&offset=${offset}&${filters}`)
   ).json();
   galleryItems = items;
 
   const gal = $("gallery");
   gal.innerHTML = "";
   for (const [i, it] of items.entries()) gal.append(galleryFigure(it, i));
-  if (!items.length && favoritesOnly) {
+  if (!items.length && (gallerySearch || favoritesOnly)) {
     const p = document.createElement("p");
     p.className = "gallery-empty";
-    p.textContent = "No favorites yet — tap ☆ on a photo to add one.";
+    p.textContent = gallerySearch
+      ? `No images match “${gallerySearch}”.`
+      : "No favorites yet — tap ☆ on a photo to add one.";
     gal.append(p);
   }
   highlightSelected();
@@ -445,6 +454,15 @@ function toggleFavoritesFilter() {
   favoritesOnly = !favoritesOnly;
   renderFavFilter();
   loadGallery(0);
+}
+
+// Debounce the prompt search so typing fires one reload after a short pause,
+// not one per keystroke. Each change jumps back to the newest matching page.
+let searchTimer = null;
+function onSearchInput(e) {
+  gallerySearch = e.target.value.trim();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadGallery(0), 200);
 }
 
 // Build one gallery thumbnail (figure) for the image at index `i` on the page.
@@ -861,6 +879,7 @@ $("delete-selected").addEventListener("click", deleteSelected);
 $("clear-selection").addEventListener("click", clearSelection);
 $("select-all").addEventListener("click", toggleSelectAllPage);
 $("fav-filter").addEventListener("click", toggleFavoritesFilter);
+$("gallery-search").addEventListener("input", onSearchInput);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
 });
