@@ -71,25 +71,40 @@ def insert(row: dict[str, Any]) -> None:
         _conn.commit()
 
 
-def count(favorites_only: bool = False) -> int:
+def _where(favorites_only: bool, query: str) -> tuple[str, list[Any]]:
+    """Build the shared WHERE clause (and params) for the gallery filters.
+
+    Conditions are AND-ed. `query` is a case-insensitive substring match on the
+    prompt; %, _ and \\ are escaped so they match literally rather than acting
+    as LIKE wildcards.
+    """
+    conds: list[str] = []
+    params: list[Any] = []
+    if favorites_only:
+        conds.append("favorite = 1")
+    if query:
+        escaped = query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        conds.append("prompt LIKE ? ESCAPE '\\'")
+        params.append(f"%{escaped}%")
+    clause = (" WHERE " + " AND ".join(conds)) if conds else ""
+    return clause, params
+
+
+def count(favorites_only: bool = False, query: str = "") -> int:
     """Total number of images in the gallery (for pagination)."""
     with _lock:
-        sql = "SELECT COUNT(*) AS n FROM images"
-        if favorites_only:
-            sql += " WHERE favorite = 1"
-        cur = _conn.execute(sql)
+        clause, params = _where(favorites_only, query)
+        cur = _conn.execute("SELECT COUNT(*) AS n FROM images" + clause, params)
         return cur.fetchone()["n"]
 
 
 def list_images(
-    limit: int = 60, offset: int = 0, favorites_only: bool = False
+    limit: int = 60, offset: int = 0, favorites_only: bool = False, query: str = ""
 ) -> list[dict[str, Any]]:
     with _lock:
-        sql = "SELECT * FROM images"
-        if favorites_only:
-            sql += " WHERE favorite = 1"
-        sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
-        cur = _conn.execute(sql, (limit, offset))
+        clause, params = _where(favorites_only, query)
+        sql = "SELECT * FROM images" + clause + " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        cur = _conn.execute(sql, [*params, limit, offset])
         return [dict(r) for r in cur.fetchall()]
 
 
