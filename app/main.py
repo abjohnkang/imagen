@@ -77,14 +77,18 @@ async def progress(ws: WebSocket, job_id: str) -> None:
 
 
 @app.get("/api/gallery")
-def gallery(limit: int = 60, offset: int = 0, favorites: bool = False) -> list[dict]:
-    return db.list_images(limit=limit, offset=offset, favorites_only=favorites)
+def gallery(
+    limit: int = 60, offset: int = 0, favorites: bool = False, query: str = ""
+) -> list[dict]:
+    return db.list_images(
+        limit=limit, offset=offset, favorites_only=favorites, query=query
+    )
 
 
 @app.get("/api/gallery/count")
-def gallery_count(favorites: bool = False) -> dict:
+def gallery_count(favorites: bool = False, query: str = "") -> dict:
     """Total image count, so the UI can compute how many pages there are."""
-    return {"count": db.count(favorites_only=favorites)}
+    return {"count": db.count(favorites_only=favorites, query=query)}
 
 
 @app.post("/api/gallery/{image_id}/favorite")
