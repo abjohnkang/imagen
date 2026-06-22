@@ -200,6 +200,7 @@ button:disabled { opacity: 0.5; cursor: default; }
 }
 .gallery-titlebar { display: flex; align-items: center; gap: 12px; }
 .gallery-titlebar .ghost { align-self: center; }
+.gallery-search { margin-left: auto; width: 220px; max-width: 40vw; padding: 6px 10px; }
 .gallery-title { margin: 0; padding: 0; }
 .gallery-controls { display: flex; align-items: center; gap: 8px; }
 .gallery-controls[hidden] { display: none; }
