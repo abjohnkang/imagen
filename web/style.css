@@ -198,8 +198,8 @@ button:disabled { opacity: 0.5; cursor: default; }
   gap: 8px;
   padding: 8px 24px 16px;
 }
-.gallery-titlebar { display: flex; align-items: center; gap: 12px; align-self: stretch; }
-.gallery-titlebar .ghost { align-self: center; }
+.gallery-filters { display: flex; align-items: center; gap: 12px; align-self: stretch; }
+.gallery-filters .ghost { align-self: center; }
 .gallery-search { margin-left: auto; width: 220px; max-width: 40vw; padding: 6px 10px; }
 .gallery-title { margin: 0; padding: 0; font-size: 26px; }
 .gallery-controls { display: flex; align-items: center; gap: 8px; }
