@@ -220,12 +220,20 @@ async function generate() {
   });
   const { job_id } = await res.json();
 
+  // The step count this job will actually run, so the queue-total ETA can
+  // estimate its duration before it starts. img2img only denoises the last
+  // `strength` fraction of the schedule, mirroring the engine's
+  // total = max(1, int(steps * strength)).
+  const effSteps = params.init_image
+    ? Math.max(1, Math.floor(params.steps * params.strength))
+    : params.steps;
   const item = {
     jobId: job_id,
     label: params.prompt.trim(),
     status: "queued",
     step: 0,
     total: 0,
+    steps: effSteps,
   };
   queue.push(item);
   renderQueue();
@@ -317,10 +325,13 @@ function renderQueue() {
   for (const item of queue) list.append(queueRow(item));
 
   const running = queue.find((q) => q.status === "running");
-  const waiting = queue.filter((q) => q.status === "queued").length;
+  const waiting = queue.filter((q) => q.status === "queued");
   if (running) {
     const pct = running.total ? Math.round((running.step / running.total) * 100) : 0;
     let line = `Generating… ${running.step}/${running.total}`;
+    // Seconds per completed step on the current job, the basis for both the
+    // single-job and whole-queue ETAs. Null until the first step lands.
+    let secPerStep = null;
     if (running.startedAt) {
       const elapsed = (Date.now() - running.startedAt) / 1000;
       line += ` · ${fmtTime(elapsed)} elapsed`;
@@ -328,15 +339,28 @@ function renderQueue() {
       // done, and there's nothing left to estimate on the last one. Early steps
       // include model-load time, so the estimate starts high and settles.
       if (running.step > 0 && running.step < running.total) {
-        const remaining = (elapsed / running.step) * (running.total - running.step);
-        line += ` · ~${fmtTime(remaining)} left`;
+        secPerStep = elapsed / running.step;
+        line += ` · ~${fmtTime(secPerStep * (running.total - running.step))} left`;
       }
     }
-    if (waiting) line += ` · ${waiting} queued`;
+    // Whole-queue ETA: the running job's remaining time plus each queued job's
+    // steps at the same per-step rate. Lets you judge the total wait before
+    // committing to it. The rate is the current job's, so a queue mixing models
+    // or sizes is only a rough guide — hence the "~". Falls back to a plain
+    // count until the first step gives us a rate.
+    if (waiting.length) {
+      if (secPerStep != null) {
+        let stepsLeft = running.total - running.step;
+        for (const q of waiting) stepsLeft += q.steps || running.total;
+        line += ` · queue: ~${fmtTime(secPerStep * stepsLeft)} for ${waiting.length + 1} images`;
+      } else {
+        line += ` · ${waiting.length} queued`;
+      }
+    }
     $("status").textContent = line;
     $("bar").style.width = pct + "%";
-  } else if (waiting) {
-    $("status").textContent = `${waiting} queued…`;
+  } else if (waiting.length) {
+    $("status").textContent = `${waiting.length} queued…`;
     $("bar").style.width = "0";
   } else {
     $("status").textContent = "";
