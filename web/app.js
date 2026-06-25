@@ -418,13 +418,24 @@ function galleryPageSize() {
   return GALLERY_ROWS * cols;
 }
 
+// Monotonic id for the most recently started loadGallery. Each call does two
+// sequential awaits (count, then list) and nothing cancels an in-flight load,
+// so without this a slow earlier request (e.g. an older search keystroke, or a
+// favorites toggle made mid-search) could resolve after a newer one and paint
+// stale results. Each call claims the next id and bails after every await if a
+// later call has since superseded it, so only the latest load ever renders.
+let galleryLoadSeq = 0;
+
 // Load one page of the gallery (8 rows, newest first) and render it, fully
 // replacing whatever page was shown. `page` is clamped into range, so callers
 // can pass galleryPage±1 freely. A new generation passes 0 to jump back to the
 // newest page; deletes reload the current page (stepping back if it emptied).
 async function loadGallery(page = galleryPage) {
+  const seq = ++galleryLoadSeq;
   const filters = new URLSearchParams({ favorites: favoritesOnly, query: gallerySearch });
-  galleryTotal = (await (await fetch(`/api/gallery/count?${filters}`)).json()).count;
+  const total = (await (await fetch(`/api/gallery/count?${filters}`)).json()).count;
+  if (seq !== galleryLoadSeq) return; // a newer load started; drop this one
+  galleryTotal = total;
   const pageSize = galleryPageSize();
   const pages = Math.max(1, Math.ceil(galleryTotal / pageSize));
   galleryPage = Math.min(Math.max(0, page), pages - 1);
@@ -433,6 +444,7 @@ async function loadGallery(page = galleryPage) {
   const items = await (
     await fetch(`/api/gallery?limit=${pageSize}&offset=${offset}&${filters}`)
   ).json();
+  if (seq !== galleryLoadSeq) return; // superseded while the list was in flight
   galleryItems = items;
 
   const gal = $("gallery");
