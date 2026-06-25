@@ -71,6 +71,7 @@ async function init() {
     }
     sel.addEventListener("change", applyModelDefaults);
     applyModelDefaults();
+    restoreForm(); // override the defaults with the last saved form, if any
   } catch {}
   loadGallery();
 }
@@ -89,6 +90,7 @@ function applyModelDefaults() {
   if (m.cfg != null) $("cfg").value = m.cfg;
   if (m.negative != null) $("negative").value = m.negative;
   renderAspect();
+  saveForm();
 }
 
 function readParams() {
@@ -104,6 +106,49 @@ function readParams() {
     init_image: initImage || "",
     strength: parseFloat($("strength").value),
   };
+}
+
+// -- form persistence -----------------------------------------------------
+// Keep the prompt and settings across reloads (and container restarts), so an
+// accidental refresh never costs a carefully-tuned prompt. The form is saved to
+// localStorage on every edit and restored once the model list has loaded.
+//
+// `formLoaded` gates saving: it stays false until restoreForm() runs, so the
+// model defaults applied during startup don't overwrite the stored form before
+// we've had a chance to read it back.
+const FORM_KEY = "imagen.form";
+let formLoaded = false;
+
+function saveForm() {
+  if (!formLoaded) return;
+  const data = { model: $("model").value, strength: $("strength").value, seedLocked };
+  for (const f of fields) data[f] = $(f).value;
+  try {
+    localStorage.setItem(FORM_KEY, JSON.stringify(data));
+  } catch {} // private mode / quota — persistence is a nicety, never fatal
+}
+
+// Repopulate the form from the last saved state, if any. Runs after the model
+// <select> is filled so a saved model id can be reselected; a saved id that no
+// longer exists is ignored (the startup default stands). Always flips
+// formLoaded on so subsequent edits persist, even when there was nothing saved.
+function restoreForm() {
+  let data = null;
+  try {
+    data = JSON.parse(localStorage.getItem(FORM_KEY) || "null");
+  } catch {} // corrupt/blocked storage — fall through to the startup defaults
+  if (data) {
+    if (data.model && MODELS.some((m) => m.id === data.model)) $("model").value = data.model;
+    for (const f of fields) if (data[f] != null) $(f).value = data[f];
+    if (data.strength != null) {
+      $("strength").value = data.strength;
+      $("strength-val").textContent = parseFloat(data.strength).toFixed(2);
+    }
+    seedLocked = !!data.seedLocked;
+    renderSeedLock();
+    renderAspect();
+  }
+  formLoaded = true;
 }
 
 // A fresh random seed in 0 .. 2^32-1, matching the server's os.urandom(4) range
@@ -126,6 +171,7 @@ function nextSeed() {
 // lock, so you can grab a specific random value and then lock it.
 function randomizeSeed() {
   $("seed").value = randomSeed();
+  saveForm();
 }
 
 // Toggle the seed lock. Locking a -1/blank field materializes a concrete random
@@ -140,6 +186,7 @@ function toggleSeedLock() {
     $("seed").value = -1;
   }
   renderSeedLock();
+  saveForm();
 }
 
 // Reflect the lock state on the button (glyph, title, pressed) and accent the
@@ -178,6 +225,7 @@ function setAspect(w, h) {
   $("width").value = W;
   $("height").value = H;
   renderAspect();
+  saveForm();
 }
 
 const ASPECTS = [["ar-square", 1, 1], ["ar-portrait", 3, 4], ["ar-landscape", 4, 3]];
@@ -211,6 +259,7 @@ async function generate() {
     return;
   }
   nextSeed(); // resolve & display the seed before reading the form
+  saveForm(); // persist the resolved seed (and the rest) for the next reload
   const params = readParams();
 
   const res = await fetch("/api/generate", {
@@ -863,6 +912,7 @@ function applySettings(it) {
     $("strength-val").textContent = parseFloat(it.strength).toFixed(2);
   }
   renderAspect();
+  saveForm();
   showImage(it.filename);
 }
 
@@ -919,6 +969,12 @@ $("gallery-search").addEventListener("input", onSearchInput);
 $("strength").addEventListener("input", () => {
   $("strength-val").textContent = parseFloat($("strength").value).toFixed(2);
 });
+
+// Persist the form on any edit. One delegated listener on the panel covers
+// every typed/spinner/slider change; the programmatic setters (model defaults,
+// aspect presets, seed, gallery reuse) call saveForm() themselves since setting
+// .value in code doesn't emit an input event.
+document.querySelector(".panel").addEventListener("input", saveForm);
 
 // Pager: "Newer" steps toward page 1, "Older" toward the end of the gallery.
 $("prev-page").addEventListener("click", () => goToPage(galleryPage - 1));
